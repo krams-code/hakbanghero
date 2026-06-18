@@ -27,6 +27,10 @@ dependencies:
   # Local Storage
   shared_preferences: ^2.3.5
 
+  # ── GPS / Location (NEW) ──────────────────────────────────────────────────
+  geolocator: ^13.0.4          # GPS speed + position stream
+  permission_handler: ^11.3.1  # Runtime permission requests
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

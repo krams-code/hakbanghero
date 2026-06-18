@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final VoidCallback? onBackTap;
+
+  const ProfileScreen({super.key, this.onBackTap});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -243,8 +245,9 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           Row(
             children: [
+              // ── Back button — uses callback instead of Navigator.pop ──
               GestureDetector(
-                onTap: () => Navigator.pop(context),
+                onTap: () => widget.onBackTap?.call(),
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(

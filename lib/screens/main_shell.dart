@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'home/home_screen.dart';
-import 'stages/stages_screen.dart';
+import 'activity/activity_screen.dart';
 import 'leaderboard/leaderboard_screen.dart';
 import 'profile/profile_screen.dart';
 import 'package:hakbanghero/screens/character/equipment_screen.dart';
 import 'package:hakbanghero/screens/gacha/gacha_screen.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  MainShell — bottom nav router
-// ─────────────────────────────────────────────────────────────────────────────
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -19,18 +16,17 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _currentIndex = 2; // Start on Home (Run)
 
-  final List<Widget> _screens = [
-    const GachaScreen(),      // 0 — Gacha
-    const EquipmentScreen(),  // 1 — Gear
-    const HomeScreen(),       // 2 — Run  (center)
-    const LeaderboardScreen(),// 3 — Ranks
-    const StagesScreen(),     // 4 — Stages
-    const ProfileScreen(),    // 5 — Profile
-  ];
+  void _navigateTo(int index) => setState(() => _currentIndex = index);
 
-  void navigateTo(int index) {
-    setState(() => _currentIndex = index);
-  }
+  // Use a getter so _navigateTo is accessible when building the list
+  List<Widget> get _screens => [
+    const GachaScreen(),                                        // 0 — Gacha
+    const EquipmentScreen(),                                    // 1 — Gear
+    HomeScreen(onProfileTap: () => _navigateTo(5)),            // 2 — Run (center)
+    const LeaderboardScreen(),                                  // 3 — Ranks
+    const ActivityScreen(),                                     // 4 — Activity
+    ProfileScreen(onBackTap: () => _navigateTo(2)),            // 5 — Profile
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -41,16 +37,14 @@ class _MainShellState extends State<MainShell> {
         children: _screens,
       ),
       bottomNavigationBar: _HakbangBottomNav(
-        currentIndex: _currentIndex,
-        onTap: navigateTo,
+        currentIndex: _currentIndex == 5 ? -1 : _currentIndex,
+        onTap: _navigateTo,
       ),
     );
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Bottom Navigation Bar
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Bottom Navigation Bar — 5 items (no Profile) ─────────────────────────────
 class _HakbangBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -65,10 +59,9 @@ class _HakbangBottomNav extends StatelessWidget {
     const items = [
       _NavItem(icon: Icons.auto_awesome,   label: 'Gacha'),
       _NavItem(icon: Icons.shield,         label: 'Gear'),
-      _NavItem(icon: Icons.directions_run, label: 'Run',    isCenter: true),
+      _NavItem(icon: Icons.directions_run, label: 'Run', isCenter: true),
       _NavItem(icon: Icons.leaderboard,    label: 'Ranks'),
-      _NavItem(icon: Icons.map,            label: 'Stages'),
-      _NavItem(icon: Icons.person,         label: 'Profile'),
+      _NavItem(icon: Icons.bolt,           label: 'Activity'),
     ];
 
     return Container(
@@ -90,7 +83,7 @@ class _HakbangBottomNav extends StatelessWidget {
           height: 64,
           child: Row(
             children: List.generate(items.length, (i) {
-              final item       = items[i];
+              final item = items[i];
               final isSelected = currentIndex == i;
 
               if (item.isCenter) {
@@ -206,8 +199,8 @@ class _HakbangBottomNav extends StatelessWidget {
 
 class _NavItem {
   final IconData icon;
-  final String   label;
-  final bool     isCenter;
+  final String label;
+  final bool isCenter;
   const _NavItem(
       {required this.icon, required this.label, this.isCenter = false});
 }

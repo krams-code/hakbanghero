@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../run/run_tracking_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback? onProfileTap;
+
+  const HomeScreen({super.key, this.onProfileTap});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with TickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _portalController;
   late AnimationController _pulseController;
   late AnimationController _entryController;
@@ -41,7 +43,8 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(milliseconds: 900),
     )..forward();
 
-    _portalRotation = Tween<double>(begin: 0, end: 1).animate(_portalController);
+    _portalRotation =
+        Tween<double>(begin: 0, end: 1).animate(_portalController);
     _portalGlow = Tween<double>(begin: 0.4, end: 1.0).animate(
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
@@ -51,7 +54,8 @@ class _HomeScreenState extends State<HomeScreen>
     _entrySlide = Tween<Offset>(
       begin: const Offset(0, 0.06),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _entryController, curve: Curves.easeOut));
+    ).animate(
+        CurvedAnimation(parent: _entryController, curve: Curves.easeOut));
 
     _loadUserData();
   }
@@ -91,16 +95,43 @@ class _HomeScreenState extends State<HomeScreen>
       'Hero';
   int get _level => (_userData?['level'] as num?)?.toInt() ?? 1;
   int get _xp => (_userData?['xp'] as num?)?.toInt() ?? 0;
-  int get _coins => (_userData?['coins'] as num?)?.toInt() ?? 0;
   int get _gems => (_userData?['gems'] as num?)?.toInt() ?? 0;
-  int get _heroicSouls => (_userData?['heroic_souls'] as num?)?.toInt() ?? 0;
-  double get _totalKm => (_userData?['total_km'] as num?)?.toDouble() ?? 0.0;
+  double get _totalKm =>
+      (_userData?['total_km'] as num?)?.toDouble() ?? 0.0;
   int get _totalSessions =>
       (_userData?['total_sessions'] as num?)?.toInt() ?? 0;
 
   int get _xpForNextLevel => _level * 500;
-  double get _xpProgress =>
-      (_xp % _xpForNextLevel) / _xpForNextLevel;
+  double get _xpProgress => (_xp % _xpForNextLevel) / _xpForNextLevel;
+
+  void _goToProfile() {
+    widget.onProfileTap?.call();
+  }
+
+  void _onStartRun() {
+    Navigator.of(context)
+        .push(
+      PageRouteBuilder(
+        pageBuilder: (_, animation, __) => const RunTrackingScreen(),
+        transitionsBuilder: (_, animation, __, child) {
+          return FadeTransition(
+            opacity:
+                CurvedAnimation(parent: animation, curve: Curves.easeOut),
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, 0.05),
+                end: Offset.zero,
+              ).animate(CurvedAnimation(
+                  parent: animation, curve: Curves.easeOut)),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    )
+        .then((_) => _loadUserData());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -149,91 +180,88 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       child: Row(
         children: [
-          // Hero avatar + name
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1A4A1A), Color(0xFF0D2A0D)],
-                  ),
-                  border: Border.all(color: const Color(0xFF00FF41), width: 2),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF00FF41).withOpacity(0.3),
-                      blurRadius: 8,
+          // ── Tappable avatar → goes to Profile ────────────────────────
+          GestureDetector(
+            onTap: _goToProfile,
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1A4A1A), Color(0xFF0D2A0D)],
                     ),
-                  ],
-                ),
-                child: const Icon(Icons.person, color: Color(0xFF00FF41), size: 20),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _username,
-                    style: const TextStyle(
-                      color: Color(0xFFE8FFE8),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF00FF41).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                              color: const Color(0xFF00FF41).withOpacity(0.4)),
-                        ),
-                        child: Text(
-                          'LVL $_level',
-                          style: const TextStyle(
-                            color: Color(0xFF00FF41),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'HERO',
-                        style: TextStyle(
-                          color: const Color(0xFF4A8A4A),
-                          fontSize: 10,
-                          letterSpacing: 1,
-                        ),
+                    border: Border.all(
+                        color: const Color(0xFF00FF41), width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF00FF41).withOpacity(0.3),
+                        blurRadius: 8,
                       ),
                     ],
                   ),
-                ],
-              ),
-            ],
+                  child: const Icon(Icons.person,
+                      color: Color(0xFF00FF41), size: 20),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _username,
+                      style: const TextStyle(
+                        color: Color(0xFFE8FFE8),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00FF41).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                                color:
+                                    const Color(0xFF00FF41).withOpacity(0.4)),
+                          ),
+                          child: Text(
+                            'LVL $_level',
+                            style: const TextStyle(
+                              color: Color(0xFF00FF41),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          'HERO',
+                          style: TextStyle(
+                            color: Color(0xFF4A8A4A),
+                            fontSize: 10,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           const Spacer(),
-          // Currency chips
+          // ── Crystals only ─────────────────────────────────────────────
           _CurrencyChip(
-              icon: Icons.monetization_on,
-              value: _coins,
-              color: const Color(0xFFFFD700)),
-          const SizedBox(width: 8),
-          _CurrencyChip(
-              icon: Icons.diamond,
-              value: _gems,
-              color: const Color(0xFF00CFFF)),
-          const SizedBox(width: 8),
-          _CurrencyChip(
-              icon: Icons.whatshot,
-              value: _heroicSouls,
-              color: const Color(0xFFFF6B35)),
+            icon: Icons.diamond,
+            value: _gems,
+            color: const Color(0xFF00CFFF),
+          ),
         ],
       ),
     );
@@ -371,7 +399,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           const SizedBox(height: 14),
           GestureDetector(
-            onTap: () {}, // Navigate to stages
+            onTap: () {},
             child: Container(
               height: 200,
               decoration: BoxDecoration(
@@ -384,32 +412,22 @@ class _HomeScreenState extends State<HomeScreen>
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
-                  // Dark bg
                   Container(
                     decoration: const BoxDecoration(
                       gradient: RadialGradient(
                         center: Alignment.center,
                         radius: 0.8,
-                        colors: [
-                          Color(0xFF0D2A1A),
-                          Color(0xFF060C06),
-                        ],
+                        colors: [Color(0xFF0D2A1A), Color(0xFF060C06)],
                       ),
                     ),
                   ),
-                  // Grid lines
-                  CustomPaint(
-                    size: Size.infinite,
-                    painter: _GridPainter(),
-                  ),
-                  // Portal glow rings
+                  CustomPaint(size: Size.infinite, painter: _GridPainter()),
                   AnimatedBuilder(
                     animation: _portalGlow,
                     builder: (_, __) => Center(
                       child: Stack(
                         alignment: Alignment.center,
                         children: [
-                          // Outer glow
                           Container(
                             width: 160,
                             height: 160,
@@ -425,7 +443,6 @@ class _HomeScreenState extends State<HomeScreen>
                               ],
                             ),
                           ),
-                          // Rotating ring
                           AnimatedBuilder(
                             animation: _portalRotation,
                             builder: (_, __) => Transform.rotate(
@@ -446,7 +463,6 @@ class _HomeScreenState extends State<HomeScreen>
                               ),
                             ),
                           ),
-                          // Inner portal
                           Container(
                             width: 90,
                             height: 90,
@@ -455,10 +471,9 @@ class _HomeScreenState extends State<HomeScreen>
                               gradient: RadialGradient(
                                 colors: [
                                   Color.lerp(
-                                    const Color(0xFF8800FF),
-                                    const Color(0xFF4400CC),
-                                    _portalGlow.value,
-                                  )!,
+                                      const Color(0xFF8800FF),
+                                      const Color(0xFF4400CC),
+                                      _portalGlow.value)!,
                                   const Color(0xFF1A0033),
                                 ],
                               ),
@@ -482,7 +497,6 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                   ),
-                  // Bottom label
                   Positioned(
                     bottom: 16,
                     left: 0,
@@ -500,18 +514,17 @@ class _HomeScreenState extends State<HomeScreen>
                           ),
                         ),
                         const SizedBox(height: 2),
-                        Text(
+                        const Text(
                           'Reach 5.0 km to unlock next stage',
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: const Color(0xFF4A8A4A),
+                            color: Color(0xFF4A8A4A),
                             fontSize: 10,
                           ),
                         ),
                       ],
                     ),
                   ),
-                  // Tap overlay hint
                   Positioned(
                     top: 12,
                     right: 12,
@@ -537,12 +550,11 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
           const SizedBox(height: 14),
-          // START RUN button
           SizedBox(
             width: double.infinity,
             height: 56,
             child: ElevatedButton(
-              onPressed: () {},
+              onPressed: _onStartRun,
               style: ElevatedButton.styleFrom(
                 padding: EdgeInsets.zero,
                 shape: RoundedRectangleBorder(
@@ -567,9 +579,9 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 child: Container(
                   alignment: Alignment.center,
-                  child: Row(
+                  child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: const [
+                    children: [
                       Icon(Icons.directions_run,
                           color: Color(0xFF0A0F0A), size: 22),
                       SizedBox(width: 10),
@@ -599,19 +611,19 @@ class _HomeScreenState extends State<HomeScreen>
           title: 'Morning Runner',
           desc: 'Run 3km before 9 AM',
           progress: 0.6,
-          reward: '50 coins',
+          reward: '50 crystals',
           icon: Icons.wb_sunny),
       _QuestData(
           title: 'Step Master',
           desc: 'Reach 10,000 steps today',
           progress: 0.35,
-          reward: '1 gem',
+          reward: '1 crystal',
           icon: Icons.transfer_within_a_station),
       _QuestData(
           title: 'Weekly Warrior',
           desc: 'Complete 5 sessions this week',
           progress: 0.8,
-          reward: '5 souls',
+          reward: '5 crystals',
           icon: Icons.local_fire_department),
     ];
 
@@ -700,25 +712,142 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             )
           else
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0D1A0D),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF1A3A1A)),
-              ),
-              child: const Text(
-                'Activity history coming soon',
-                style: TextStyle(color: Color(0xFF4A8A4A), fontSize: 13),
-              ),
-            ),
+            _RecentActivityList(
+                uid: FirebaseAuth.instance.currentUser?.uid),
         ],
       ),
     );
   }
 }
 
-// ─── Sub-widgets ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+//  Recent activity mini-list
+// ─────────────────────────────────────────────────────────────────────────────
+class _RecentActivityList extends StatelessWidget {
+  final String? uid;
+  const _RecentActivityList({this.uid});
+
+  @override
+  Widget build(BuildContext context) {
+    if (uid == null) return const SizedBox.shrink();
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .collection('activities')
+          .orderBy('startTime', descending: true)
+          .limit(3)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D1A0D),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF1A3A1A)),
+            ),
+            child: const Text(
+              'Activity history coming soon',
+              style: TextStyle(color: Color(0xFF4A8A4A), fontSize: 13),
+            ),
+          );
+        }
+
+        return Column(
+          children: snapshot.data!.docs.map((doc) {
+            final s = _parseSession(doc);
+            final color = _colorForType(s['type'] as String);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D1A0D),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Text(_emojiForType(s['type'] as String),
+                      style: const TextStyle(fontSize: 20)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (s['type'] as String).toUpperCase(),
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          '${(s['distanceKm'] as double).toStringAsFixed(2)} km  •  ${s['duration'] as String}',
+                          style: const TextStyle(
+                            color: Color(0xFF4A7A4A),
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '+${s['xp']} XP',
+                    style: const TextStyle(
+                      color: Color(0xFFFFD700),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Map<String, dynamic> _parseSession(DocumentSnapshot doc) {
+    final d = doc.data() as Map<String, dynamic>;
+    final secs = (d['durationSeconds'] as num).toInt();
+    final m = secs ~/ 60;
+    final s = secs % 60;
+    return {
+      'type': d['type'] as String? ?? 'run',
+      'distanceKm': (d['distanceKm'] as num).toDouble(),
+      'duration': '${m}m ${s}s',
+      'xp': (d['xpEarned'] as num).toInt(),
+    };
+  }
+
+  Color _colorForType(String type) {
+    switch (type) {
+      case 'walk':
+        return const Color(0xFF00CFFF);
+      case 'jog':
+        return const Color(0xFFFFD700);
+      default:
+        return const Color(0xFF00FF41);
+    }
+  }
+
+  String _emojiForType(String type) {
+    switch (type) {
+      case 'walk':
+        return '🚶';
+      case 'jog':
+        return '🏃';
+      default:
+        return '⚡';
+    }
+  }
+}
+
+// ─── Sub-widgets ──────────────────────────────────────────────────────────────
 
 class _CurrencyChip extends StatelessWidget {
   final IconData icon;
@@ -731,21 +860,23 @@ class _CurrencyChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.4)),
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 13),
-          const SizedBox(width: 4),
+          Icon(icon, color: color, size: 15),
+          const SizedBox(width: 5),
           Text(
-            value > 9999 ? '${(value / 1000).toStringAsFixed(1)}k' : '$value',
+            value > 9999
+                ? '${(value / 1000).toStringAsFixed(1)}k'
+                : '$value',
             style: TextStyle(
               color: color,
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -793,13 +924,9 @@ class _StatCard extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            Text(
-              unit,
-              style: const TextStyle(
-                color: Color(0xFF3A5A3A),
-                fontSize: 10,
-              ),
-            ),
+            Text(unit,
+                style: const TextStyle(
+                    color: Color(0xFF3A5A3A), fontSize: 10)),
             const SizedBox(height: 2),
             Text(
               label,
@@ -834,7 +961,6 @@ class _QuestData {
 
 class _QuestCard extends StatelessWidget {
   final _QuestData quest;
-
   const _QuestCard({required this.quest});
 
   Color get _progressColor {
@@ -861,8 +987,7 @@ class _QuestCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: _progressColor.withOpacity(0.12),
               borderRadius: BorderRadius.circular(10),
-              border:
-                  Border.all(color: _progressColor.withOpacity(0.3)),
+              border: Border.all(color: _progressColor.withOpacity(0.3)),
             ),
             child: Icon(quest.icon, color: _progressColor, size: 18),
           ),
@@ -886,13 +1011,13 @@ class _QuestCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFFD700).withOpacity(0.1),
+                        color: const Color(0xFF00CFFF).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(5),
                       ),
                       child: Text(
                         quest.reward,
                         style: const TextStyle(
-                          color: Color(0xFFFFD700),
+                          color: Color(0xFF00CFFF),
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                         ),
@@ -904,9 +1029,7 @@ class _QuestCard extends StatelessWidget {
                 Text(
                   quest.desc,
                   style: const TextStyle(
-                    color: Color(0xFF4A7A4A),
-                    fontSize: 11,
-                  ),
+                      color: Color(0xFF4A7A4A), fontSize: 11),
                 ),
                 const SizedBox(height: 8),
                 Stack(
@@ -945,7 +1068,7 @@ class _QuestCard extends StatelessWidget {
   }
 }
 
-// ─── Custom Painters ────────────────────────────────────────────────────────
+// ─── Custom Painters ──────────────────────────────────────────────────────────
 
 class _GridPainter extends CustomPainter {
   @override
@@ -953,7 +1076,6 @@ class _GridPainter extends CustomPainter {
     final paint = Paint()
       ..color = const Color(0xFF1A3A1A).withOpacity(0.3)
       ..strokeWidth = 0.5;
-
     for (double x = 0; x < size.width; x += 32) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
     }
@@ -989,7 +1111,9 @@ class _DashedCirclePainter extends CustomPainter {
       final end = angle + dashLen;
       final path = Path();
       path.addArc(
-          Rect.fromCircle(center: Offset(cx, cy), radius: r), start, end - start);
+          Rect.fromCircle(center: Offset(cx, cy), radius: r),
+          start,
+          end - start);
       canvas.drawPath(path, paint);
       angle += dashLen + gapLen;
     }
