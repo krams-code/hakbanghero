@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  equipment_screen.dart  —  HakbangHero  (Slayer Legends style)
@@ -13,7 +15,6 @@ class EquipmentScreen extends StatefulWidget {
 
 class _EquipmentScreenState extends State<EquipmentScreen>
     with SingleTickerProviderStateMixin {
-  // ── Palette (matches gacha_screen.dart) ─────────────────────────────────
   static const Color bgDeep   = Color(0xFF060C06);
   static const Color bgPanel  = Color(0xFF0A140A);
   static const Color bgCard   = Color(0xFF0F1E0F);
@@ -35,7 +36,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     'Divine'   : Color(0xFFFF6B35),
   };
 
-  // ── Gear slot definitions — 4 left, 4 right (Slayer Legends layout) ──────
   static const List<Map<String, dynamic>> _slotDefs = [
     {'id': 'helm',    'label': 'HELM',    'icon': Icons.security,       'side': 'left'},
     {'id': 'weapon',  'label': 'WEAPON',  'icon': Icons.gavel,          'side': 'left'},
@@ -47,7 +47,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     {'id': 'offhand', 'label': 'OFF',     'icon': Icons.layers,         'side': 'right'},
   ];
 
-  // ── Default equipped items ───────────────────────────────────────────────
   final Map<String, Map<String, dynamic>?> _equipped = {
     'helm'   : {'name': 'Shadow Crown',      'rarity': 'Epic',      'emoji': '👑', 'slot': 'helm',    'atk': 0,   'def': 210, 'spd': 0,   'hp': 800,  'xp': 10},
     'weapon' : {'name': 'Verdant Blade',     'rarity': 'Legendary', 'emoji': '⚔️', 'slot': 'weapon',  'atk': 480, 'def': 0,   'spd': 120, 'hp': 0,    'xp': 25},
@@ -59,7 +58,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     'offhand': null,
   };
 
-  // ── Inventory pool ───────────────────────────────────────────────────────
   final List<Map<String, dynamic>?> _inventory = [
     {'name': 'Iron Sword',      'rarity': 'Common',   'emoji': '🗡️', 'slot': 'weapon',  'atk': 80,  'def': 0,   'spd': 10,  'hp': 0,   'xp': 0},
     {'name': 'Leather Hood',    'rarity': 'Common',   'emoji': '🪖', 'slot': 'helm',    'atk': 0,   'def': 60,  'spd': 0,   'hp': 200, 'xp': 0},
@@ -73,14 +71,14 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     null, null, null, null,
   ];
 
-  // ── State ────────────────────────────────────────────────────────────────
   String _selectedSlot = '';
   int    _filterIdx    = 0;
   late   TabController _tabCtrl;
+  int    _manaCrystals = 0;
+  bool   _loadingCurrency = true;
 
   static const _filterLabels = ['ALL', 'WEAPON', 'ARMOR', 'ACCESSORY'];
 
-  // ── Computed stats ───────────────────────────────────────────────────────
   int get _cp {
     int v = 1200;
     for (final e in _equipped.values) {
@@ -99,12 +97,12 @@ class _EquipmentScreenState extends State<EquipmentScreen>
   int get _totalSpd => _equipped.values.fold(0, (s, e) => s + (e?['spd'] as int? ?? 0));
   int get _totalHp  => _equipped.values.fold(0, (s, e) => s + (e?['hp']  as int? ?? 0));
 
-  // ── Lifecycle ────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: _filterLabels.length, vsync: this)
       ..addListener(() => setState(() => _filterIdx = _tabCtrl.index));
+    _loadCurrency();
   }
 
   @override
@@ -113,7 +111,22 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     super.dispose();
   }
 
-  // ── Equip / Unequip helpers ──────────────────────────────────────────────
+  Future<void> _loadCurrency() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) { setState(() => _loadingCurrency = false); return; }
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (mounted) {
+        setState(() {
+          _manaCrystals    = (doc.data()?['gems'] as num?)?.toInt() ?? 0;
+          _loadingCurrency = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingCurrency = false);
+    }
+  }
+
   void _tapSlot(String slotId) {
     setState(() => _selectedSlot = (_selectedSlot == slotId) ? '' : slotId);
   }
@@ -122,10 +135,7 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     final item = _equipped[slotId];
     if (item == null) return;
     final emptyIdx = _inventory.indexWhere((e) => e == null);
-    if (emptyIdx == -1) {
-      _snack('Inventory full!', red);
-      return;
-    }
+    if (emptyIdx == -1) { _snack('Inventory full!', red); return; }
     setState(() {
       _inventory[emptyIdx] = item;
       _equipped[slotId]    = null;
@@ -137,7 +147,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     if (item == null) return;
 
     if (_selectedSlot.isNotEmpty) {
-      // Quick-equip into selected slot if compatible
       final compatSlot = item['slot'] as String;
       final target = (_selectedSlot == compatSlot) ? _selectedSlot : '';
       if (target.isEmpty) {
@@ -167,7 +176,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     );
   }
 
-  // ── Item detail modal ────────────────────────────────────────────────────
   void _showDetail(Map<String, dynamic> item, int invIdx) {
     final color = rarityColor[item['rarity']] ?? textSub;
     showModalBottomSheet(
@@ -175,13 +183,11 @@ class _EquipmentScreenState extends State<EquipmentScreen>
       backgroundColor    : Colors.transparent,
       isScrollControlled : true,
       builder: (_) => _ItemDetailSheet(
-        item       : item,
-        color      : color,
-        onEquip    : () {
+        item    : item,
+        color   : color,
+        onEquip : () {
           Navigator.pop(context);
-          setState(() {
-            _selectedSlot = item['slot'] as String;
-          });
+          setState(() => _selectedSlot = item['slot'] as String);
           _snack('Tap the ${(item['slot'] as String).toUpperCase()} slot to equip', green);
         },
         onSell: () {
@@ -193,9 +199,8 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     );
   }
 
-  // ── Filtered inventory ───────────────────────────────────────────────────
   bool _passesFilter(Map<String, dynamic>? item) {
-    if (item == null) return true; // always show empty slots
+    if (item == null) return true;
     if (_filterIdx == 0) return true;
     final slot = (item['slot'] as String).toLowerCase();
     switch (_filterIdx) {
@@ -206,9 +211,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     }
   }
 
-  // ════════════════════════════════════════════════════════════════════════════
-  //  BUILD
-  // ════════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -234,7 +236,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     );
   }
 
-  // ── Header ───────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -245,23 +246,25 @@ class _EquipmentScreenState extends State<EquipmentScreen>
       child: Row(
         children: [
           Container(
-            width : 36, height: 36,
-            decoration: BoxDecoration(
-              shape : BoxShape.circle,
-              border: Border.all(color: green, width: 2),
-              color : bgCard,
-            ),
+            width: 36, height: 36,
+            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: green, width: 2), color: bgCard),
             child: const Icon(Icons.person, color: green, size: 20),
           ),
           const SizedBox(width: 8),
-          const Text(
-            'HERO #4207',
-            style: TextStyle(color: textMain, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1),
+          StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance
+                .collection('users')
+                .doc(FirebaseAuth.instance.currentUser?.uid)
+                .snapshots(),
+            builder: (context, snapshot) {
+              final username = (snapshot.data?.data() as Map<String, dynamic>?)?['username'] as String? ?? 'Hero';
+              return Text(username,
+                  style: const TextStyle(color: textMain, fontWeight: FontWeight.bold, fontSize: 13, letterSpacing: 1));
+            },
           ),
           const Spacer(),
-          _chip('💎', '1,200', teal),
-          const SizedBox(width: 6),
-          _chip('🔮', '350', gold),
+          // Mana Crystals chip
+          _GemChip(value: _loadingCurrency ? '...' : '$_manaCrystals'),
           const SizedBox(width: 10),
           const Icon(Icons.settings, color: textSub, size: 20),
         ],
@@ -269,21 +272,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     );
   }
 
-  Widget _chip(String icon, String val, Color color) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: BoxDecoration(
-      color       : color.withValues(alpha: 0.12),
-      borderRadius: BorderRadius.circular(20),
-      border      : Border.all(color: color.withValues(alpha: 0.4)),
-    ),
-    child: Row(children: [
-      Text(icon, style: const TextStyle(fontSize: 12)),
-      const SizedBox(width: 4),
-      Text(val, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
-    ]),
-  );
-
-  // ── Equipment Zone (slots + character) ──────────────────────────────────
   Widget _buildEquipZone() {
     final leftSlots  = _slotDefs.where((s) => s['side'] == 'left').toList();
     final rightSlots = _slotDefs.where((s) => s['side'] == 'right').toList();
@@ -299,7 +287,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
       ),
       child: Row(
         children: [
-          // ── Left gear slots ───────────────────────────────────────────
           SizedBox(
             width: 74,
             child: Column(
@@ -307,13 +294,10 @@ class _EquipmentScreenState extends State<EquipmentScreen>
               children: leftSlots.map(_slotWidget).toList(),
             ),
           ),
-
-          // ── Character ────────────────────────────────────────────────
           Expanded(
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // ambient glow
                 Container(
                   width: 140, height: 200,
                   decoration: BoxDecoration(
@@ -323,12 +307,10 @@ class _EquipmentScreenState extends State<EquipmentScreen>
                     ]),
                   ),
                 ),
-                // Sprite
                 SizedBox(
                   width: 110, height: 200,
                   child: CustomPaint(painter: _HeroSpritePainter()),
                 ),
-                // CP badge
                 Positioned(
                   top: 8,
                   child: Container(
@@ -343,15 +325,12 @@ class _EquipmentScreenState extends State<EquipmentScreen>
                       children: [
                         const Icon(Icons.bolt, color: purple, size: 13),
                         const SizedBox(width: 3),
-                        Text(
-                          '$_cp CP',
-                          style: const TextStyle(color: purple, fontSize: 11, fontWeight: FontWeight.bold),
-                        ),
+                        Text('$_cp CP',
+                            style: const TextStyle(color: purple, fontSize: 11, fontWeight: FontWeight.bold)),
                       ],
                     ),
                   ),
                 ),
-                // Selection hint
                 if (_selectedSlot.isNotEmpty)
                   Positioned(
                     bottom: 8,
@@ -371,8 +350,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
               ],
             ),
           ),
-
-          // ── Right gear slots ──────────────────────────────────────────
           SizedBox(
             width: 74,
             child: Column(
@@ -407,9 +384,7 @@ class _EquipmentScreenState extends State<EquipmentScreen>
             color: selected ? color : color.withValues(alpha: 0.45),
             width: selected ? 2 : 1,
           ),
-          boxShadow: selected
-              ? [BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 8)]
-              : [],
+          boxShadow: selected ? [BoxShadow(color: color.withValues(alpha: 0.35), blurRadius: 8)] : [],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -418,27 +393,21 @@ class _EquipmentScreenState extends State<EquipmentScreen>
                 ? Text(item['emoji'] as String, style: const TextStyle(fontSize: 20))
                 : Icon(iconData, color: color, size: 18),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: TextStyle(color: color, fontSize: 7, fontWeight: FontWeight.bold, letterSpacing: 0.3),
-              overflow: TextOverflow.ellipsis,
-            ),
+            Text(label,
+                style: TextStyle(color: color, fontSize: 7, fontWeight: FontWeight.bold, letterSpacing: 0.3),
+                overflow: TextOverflow.ellipsis),
           ],
         ),
       ),
     );
   }
 
-  // ── Combat Power bar ─────────────────────────────────────────────────────
   Widget _buildCPBar() {
     return Container(
       margin : const EdgeInsets.fromLTRB(12, 8, 12, 0),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [
-          const Color(0xFF1A0A3D),
-          purple.withValues(alpha: 0.08),
-        ]),
+        gradient: LinearGradient(colors: [const Color(0xFF1A0A3D), purple.withValues(alpha: 0.08)]),
         borderRadius: BorderRadius.circular(10),
         border      : Border.all(color: purple.withValues(alpha: 0.28)),
       ),
@@ -448,16 +417,12 @@ class _EquipmentScreenState extends State<EquipmentScreen>
           const SizedBox(width: 6),
           const Text('COMBAT POWER', style: TextStyle(color: textSub, fontSize: 10, letterSpacing: 1.5)),
           const Spacer(),
-          Text(
-            '$_cp',
-            style: const TextStyle(color: purple, fontSize: 22, fontWeight: FontWeight.w900),
-          ),
+          Text('$_cp', style: const TextStyle(color: purple, fontSize: 22, fontWeight: FontWeight.w900)),
         ],
       ),
     );
   }
 
-  // ── Stat row ─────────────────────────────────────────────────────────────
   Widget _buildStatRow() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 7, 12, 0),
@@ -491,10 +456,8 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     ),
   );
 
-  // ── Inventory ────────────────────────────────────────────────────────────
   Widget _buildInventory() {
     final filled = _inventory.where((e) => e != null).length;
-
     return Container(
       margin : const EdgeInsets.fromLTRB(12, 7, 12, 12),
       decoration: BoxDecoration(
@@ -504,7 +467,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
       ),
       child: Column(
         children: [
-          // Header row
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
             child: Row(
@@ -523,15 +485,12 @@ class _EquipmentScreenState extends State<EquipmentScreen>
                       borderRadius: BorderRadius.circular(6),
                       border      : Border.all(color: green.withValues(alpha: 0.4)),
                     ),
-                    child: Text(
-                      'SELECT ${_selectedSlot.toUpperCase()}',
-                      style: const TextStyle(color: green, fontSize: 9, fontWeight: FontWeight.bold),
-                    ),
+                    child: Text('SELECT ${_selectedSlot.toUpperCase()}',
+                        style: const TextStyle(color: green, fontSize: 9, fontWeight: FontWeight.bold)),
                   ),
               ],
             ),
           ),
-          // Filter tabs
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: TabBar(
@@ -544,7 +503,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
               tabs: _filterLabels.map((t) => Tab(text: t)).toList(),
             ),
           ),
-          // Grid
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
@@ -557,9 +515,7 @@ class _EquipmentScreenState extends State<EquipmentScreen>
               itemCount  : _inventory.length,
               itemBuilder: (_, i) {
                 final item = _inventory[i];
-                if (item != null && !_passesFilter(item)) {
-                  return _emptyCell(); // hide filtered items visually
-                }
+                if (item != null && !_passesFilter(item)) return _emptyCell();
                 return _inventoryCell(i);
               },
             ),
@@ -581,10 +537,8 @@ class _EquipmentScreenState extends State<EquipmentScreen>
     final item = _inventory[i];
     if (item == null) return _emptyCell();
 
-    final color      = rarityColor[item['rarity']] ?? textSub;
-    final isEquipped = _equipped.values.any(
-      (e) => e != null && e['name'] == item['name'],
-    );
+    final color        = rarityColor[item['rarity']] ?? textSub;
+    final isEquipped   = _equipped.values.any((e) => e != null && e['name'] == item['name']);
     final isCompatible = _selectedSlot.isNotEmpty && item['slot'] == _selectedSlot;
 
     return GestureDetector(
@@ -592,17 +546,13 @@ class _EquipmentScreenState extends State<EquipmentScreen>
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 130),
         decoration: BoxDecoration(
-          color       : isCompatible
-              ? color.withValues(alpha: 0.22)
-              : bgCard,
+          color       : isCompatible ? color.withValues(alpha: 0.22) : bgCard,
           borderRadius: BorderRadius.circular(8),
           border      : Border.all(
             color: isCompatible ? color : color.withValues(alpha: 0.45),
             width: isCompatible ? 2 : 1,
           ),
-          boxShadow: isCompatible
-              ? [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 6)]
-              : [],
+          boxShadow: isCompatible ? [BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 6)] : [],
         ),
         child: Stack(
           children: [
@@ -612,10 +562,7 @@ class _EquipmentScreenState extends State<EquipmentScreen>
                 children: [
                   Text(item['emoji'] as String, style: const TextStyle(fontSize: 22)),
                   const SizedBox(height: 3),
-                  Container(
-                    width: 6, height: 6,
-                    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                  ),
+                  Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
                 ],
               ),
             ),
@@ -624,16 +571,40 @@ class _EquipmentScreenState extends State<EquipmentScreen>
                 top: 2, right: 2,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                  decoration: BoxDecoration(
-                    color       : green,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  child: const Text('EQ',
-                      style: TextStyle(color: Colors.black, fontSize: 6, fontWeight: FontWeight.bold)),
+                  decoration: BoxDecoration(color: green, borderRadius: BorderRadius.circular(3)),
+                  child: const Text('EQ', style: TextStyle(color: Colors.black, fontSize: 6, fontWeight: FontWeight.bold)),
                 ),
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Gem chip for header ───────────────────────────────────────────────────────
+class _GemChip extends StatelessWidget {
+  final String value;
+  const _GemChip({required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF7B4FFF).withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF7B4FFF).withValues(alpha: 0.5)),
+        boxShadow: [BoxShadow(color: const Color(0xFF7B4FFF).withValues(alpha: 0.2), blurRadius: 8)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('🔮', style: TextStyle(fontSize: 14)),
+          const SizedBox(width: 5),
+          Text(value,
+              style: const TextStyle(color: Color(0xFFB388FF), fontWeight: FontWeight.bold, fontSize: 12)),
+        ],
       ),
     );
   }
@@ -677,20 +648,15 @@ class _ItemDetailSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Drag handle
           Container(
             width: 40, height: 4,
-            decoration: BoxDecoration(
-              color       : color.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(2),
-            ),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 16),
-          // Item header
           Row(
             children: [
               Container(
-                width : 64, height: 64,
+                width: 64, height: 64,
                 decoration: BoxDecoration(
                   color       : color.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(14),
@@ -720,7 +686,6 @@ class _ItemDetailSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 16),
-          // Stats
           Wrap(
             spacing: 8, runSpacing: 8,
             children: [
@@ -732,7 +697,6 @@ class _ItemDetailSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          // Buttons
           Row(
             children: [
               Expanded(
@@ -765,8 +729,7 @@ class _ItemDetailSheet extends StatelessWidget {
                     ),
                     child: const Text('EQUIP',
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2)),
+                        style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2)),
                   ),
                 ),
               ),
@@ -800,43 +763,32 @@ class _ItemDetailSheet extends StatelessWidget {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  Hero Sprite Painter — Slayer Legends silhouette style
+//  Hero Sprite Painter
 // ══════════════════════════════════════════════════════════════════════════════
 class _HeroSpritePainter extends CustomPainter {
-  static const _green    = Color(0xFF00FF41);
-  static const _darkBg   = Color(0xFF0A1A0A);
+  static const _green  = Color(0xFF00FF41);
+  static const _darkBg = Color(0xFF0A1A0A);
 
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2;
 
-    final fill = Paint()..color = _darkBg..style = PaintingStyle.fill;
-    final stroke = Paint()
-      ..color      = _green.withValues(alpha: 0.75)
-      ..style      = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
-    final glow = Paint()
-      ..color      = _green.withValues(alpha: 0.12)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-    final accentLine = Paint()
-      ..color      = _green.withValues(alpha: 0.35)
-      ..strokeWidth = 0.9
-      ..style      = PaintingStyle.stroke;
+    final fill       = Paint()..color = _darkBg..style = PaintingStyle.fill;
+    final stroke     = Paint()..color = _green.withValues(alpha: 0.75)..style = PaintingStyle.stroke..strokeWidth = 1.6;
+    final glow       = Paint()..color = _green.withValues(alpha: 0.12)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    final accentLine = Paint()..color = _green.withValues(alpha: 0.35)..strokeWidth = 0.9..style = PaintingStyle.stroke;
 
-    // ── HEAD ────────────────────────────────────────────────────────────────
     final headCenter = Offset(cx, size.height * 0.11);
     canvas.drawCircle(headCenter, 14, glow);
     canvas.drawCircle(headCenter, 14, fill);
     canvas.drawCircle(headCenter, 14, stroke);
 
-    // Helmet crest
     final crest = Path()
-      ..moveTo(cx - 6,  size.height * 0.04)
-      ..lineTo(cx,      size.height * 0.01)
-      ..lineTo(cx + 6,  size.height * 0.04);
+      ..moveTo(cx - 6, size.height * 0.04)
+      ..lineTo(cx,     size.height * 0.01)
+      ..lineTo(cx + 6, size.height * 0.04);
     canvas.drawPath(crest, stroke);
 
-    // ── SHOULDERS ───────────────────────────────────────────────────────────
     final shoulders = Path()
       ..moveTo(cx - 20, size.height * 0.25)
       ..quadraticBezierTo(cx - 32, size.height * 0.20, cx - 28, size.height * 0.30)
@@ -844,17 +796,15 @@ class _HeroSpritePainter extends CustomPainter {
       ..lineTo(cx + 18, size.height * 0.33)
       ..lineTo(cx + 28, size.height * 0.30)
       ..quadraticBezierTo(cx + 32, size.height * 0.20, cx + 20, size.height * 0.25)
-      ..lineTo(cx,      size.height * 0.20)
+      ..lineTo(cx, size.height * 0.20)
       ..close();
     canvas.drawPath(shoulders, glow);
     canvas.drawPath(shoulders, fill);
     canvas.drawPath(shoulders, stroke);
 
-    // Shoulder pauldron dots
     canvas.drawCircle(Offset(cx - 27, size.height * 0.24), 3, Paint()..color = _green.withValues(alpha: 0.5));
     canvas.drawCircle(Offset(cx + 27, size.height * 0.24), 3, Paint()..color = _green.withValues(alpha: 0.5));
 
-    // ── TORSO ───────────────────────────────────────────────────────────────
     final torso = Path()
       ..moveTo(cx - 18, size.height * 0.33)
       ..lineTo(cx - 13, size.height * 0.56)
@@ -864,12 +814,10 @@ class _HeroSpritePainter extends CustomPainter {
     canvas.drawPath(torso, fill);
     canvas.drawPath(torso, stroke);
 
-    // Chest plate lines
     canvas.drawLine(Offset(cx, size.height * 0.34), Offset(cx, size.height * 0.55), accentLine);
     canvas.drawLine(Offset(cx - 9, size.height * 0.41), Offset(cx + 9, size.height * 0.41), accentLine);
     canvas.drawLine(Offset(cx - 8, size.height * 0.48), Offset(cx + 8, size.height * 0.48), accentLine);
 
-    // ── ARMS ────────────────────────────────────────────────────────────────
     for (final side in [-1, 1]) {
       final sx = side.toDouble();
       final arm = Path()
@@ -880,35 +828,29 @@ class _HeroSpritePainter extends CustomPainter {
         ..close();
       canvas.drawPath(arm, fill);
       canvas.drawPath(arm, stroke);
-      // Elbow guard
-      canvas.drawCircle(Offset(cx + sx * 27, size.height * 0.46), 4, Paint()
-        ..color      = _green.withValues(alpha: 0.3)
-        ..style      = PaintingStyle.fill);
+      canvas.drawCircle(Offset(cx + sx * 27, size.height * 0.46), 4,
+          Paint()..color = _green.withValues(alpha: 0.3)..style = PaintingStyle.fill);
     }
 
-    // ── BELT ────────────────────────────────────────────────────────────────
     final belt = Rect.fromLTWH(cx - 13, size.height * 0.555, 26, 6);
     canvas.drawRect(belt, fill);
     canvas.drawRect(belt, stroke);
-    // Buckle
     canvas.drawRect(
       Rect.fromCenter(center: Offset(cx, size.height * 0.558), width: 8, height: 6),
       Paint()..color = _green.withValues(alpha: 0.5)..style = PaintingStyle.fill,
     );
 
-    // ── LEGS ────────────────────────────────────────────────────────────────
     for (final side in [-1, 1]) {
-      final sx = side.toDouble();
+      final sx   = side.toDouble();
       final sign = side == -1 ? 0 : 1;
-      final leg = Path()
-        ..moveTo(cx + sx * (sign == 0 ? -13 : 4), size.height * 0.615)
-        ..lineTo(cx + sx * (sign == 0 ? -16 : 7), size.height * 0.79)
-        ..lineTo(cx + sx * (sign == 0 ?  -7 : 16), size.height * 0.79)
-        ..lineTo(cx + sx * (sign == 0 ?  -4 : 13), size.height * 0.615)
+      final leg  = Path()
+        ..moveTo(cx + sx * (sign == 0 ? -13 : 4),  size.height * 0.615)
+        ..lineTo(cx + sx * (sign == 0 ? -16 : 7),  size.height * 0.79)
+        ..lineTo(cx + sx * (sign == 0 ? -7  : 16), size.height * 0.79)
+        ..lineTo(cx + sx * (sign == 0 ? -4  : 13), size.height * 0.615)
         ..close();
       canvas.drawPath(leg, fill);
       canvas.drawPath(leg, stroke);
-      // Knee guard
       canvas.drawCircle(
         Offset(cx + sx * (sign == 0 ? -11 : 11), size.height * 0.70),
         4,
@@ -916,8 +858,6 @@ class _HeroSpritePainter extends CustomPainter {
       );
     }
 
-    // ── BOOTS ───────────────────────────────────────────────────────────────
-    // Left boot
     final lBoot = Path()
       ..moveTo(cx - 16, size.height * 0.79)
       ..lineTo(cx - 20, size.height * 0.90)
@@ -927,7 +867,6 @@ class _HeroSpritePainter extends CustomPainter {
     canvas.drawPath(lBoot, fill);
     canvas.drawPath(lBoot, stroke);
 
-    // Right boot
     final rBoot = Path()
       ..moveTo(cx + 16, size.height * 0.79)
       ..lineTo(cx + 20, size.height * 0.90)
@@ -937,7 +876,6 @@ class _HeroSpritePainter extends CustomPainter {
     canvas.drawPath(rBoot, fill);
     canvas.drawPath(rBoot, stroke);
 
-    // ── EYES (glowing) ──────────────────────────────────────────────────────
     final eyePaint = Paint()
       ..color      = _green
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);

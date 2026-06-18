@@ -17,7 +17,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   Map<String, dynamic>? _userData;
   bool _loading = true;
 
-  // ── Slayer Legends colour palette ──────────────────────────────────────────
   static const Color bgDeep   = Color(0xFF060D0A);
   static const Color bgPanel  = Color(0xFF0D1A12);
   static const Color bgCard   = Color(0xFF122018);
@@ -30,7 +29,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   static const Color textMain = Color(0xFFE8F5E9);
   static const Color textSub  = Color(0xFF6B8C72);
 
-  // ── Rarity colours ────────────────────────────────────────────────────────
   static const Map<String, Color> rarityColor = {
     'Common'    : Color(0xFF9E9E9E),
     'Uncommon'  : Color(0xFF4CAF50),
@@ -40,7 +38,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     'Divine'    : Color(0xFFFF6B35),
   };
 
-  // ── Mock equipped gear ────────────────────────────────────────────────────
   final List<Map<String, dynamic>> _equippedGear = [
     {
       'slot'   : 'Weapon',
@@ -136,8 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             style: ElevatedButton.styleFrom(backgroundColor: red),
             onPressed: () => Navigator.pop(context, true),
             child: const Text('Sign Out',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -157,18 +153,18 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
 
-    final user     = FirebaseAuth.instance.currentUser;
-    final username = _userData?['username'] ?? user?.displayName ?? 'Hero';
-    final level    = _userData?['level']    ?? 1;
-    final xp       = (_userData?['xp']      ?? 0) as int;
-    final xpNeeded = level * 500;
-    final coins    = _userData?['coins']    ?? 0;
-    final gems     = _userData?['gems']     ?? 0;
-    final souls    = _userData?['heroic_souls'] ?? 0;
-    final totalKm  = (_userData?['total_km'] ?? 0.0) as double;
-    final sessions = _userData?['total_sessions'] ?? 0;
-    final steps    = _userData?['total_steps']    ?? 0;
-    final avatarUrl = user?.photoURL;
+    final user          = FirebaseAuth.instance.currentUser;
+    final username      = _userData?['username']     ?? user?.displayName ?? 'Hero';
+    final level         = _userData?['level']        ?? 1;
+    final xp            = (_userData?['xp']          ?? 0) as int;
+    final xpNeeded      = level * 500;
+    final coins         = _userData?['coins']        ?? 0;
+    final gems          = _userData?['gems']         ?? 0;
+    final souls         = _userData?['heroic_souls'] ?? 0;
+    final totalKm       = (_userData?['total_km']    ?? 0.0) as double;
+    final sessions      = _userData?['total_sessions'] ?? 0;
+    final steps         = _userData?['total_steps']    ?? 0;
+    final avatarUrl     = user?.photoURL;
 
     return Scaffold(
       backgroundColor: bgDeep,
@@ -193,8 +189,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               indicatorColor      : green,
               labelColor          : green,
               unselectedLabelColor: textSub,
-              labelStyle: const TextStyle(
-                  fontWeight: FontWeight.bold, fontSize: 13),
+              labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
               tabs: const [
                 Tab(text: 'STATS'),
                 Tab(text: 'GEAR'),
@@ -213,9 +208,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     steps   : steps,
                     level   : level),
                 _buildGearTab(),
-                _buildRecordsTab(
-                    totalKm : totalKm,
-                    sessions: sessions),
+                _buildRecordsTab(),
               ],
             ),
           ),
@@ -224,7 +217,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ── Hero Banner ──────────────────────────────────────────────────────────────
   Widget _buildHeroBanner({
     required String username,
     required int level,
@@ -245,7 +237,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           Row(
             children: [
-              // ── Back button — uses callback instead of Navigator.pop ──
               GestureDetector(
                 onTap: () => widget.onBackTap?.call(),
                 child: Container(
@@ -255,16 +246,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                     borderRadius: BorderRadius.circular(10),
                     border      : Border.all(color: greenDim),
                   ),
-                  child: const Icon(Icons.arrow_back_ios_new,
-                      color: green, size: 18),
+                  child: const Icon(Icons.arrow_back_ios_new, color: green, size: 18),
                 ),
               ),
               const Spacer(),
               const Text('PROFILE',
                   style: TextStyle(
-                      color      : green,
-                      fontSize   : 14,
-                      fontWeight : FontWeight.bold,
+                      color        : green,
+                      fontSize     : 14,
+                      fontWeight   : FontWeight.bold,
                       letterSpacing: 4)),
               const Spacer(),
               GestureDetector(
@@ -304,31 +294,25 @@ class _ProfileScreenState extends State<ProfileScreen>
                 child: CircleAvatar(
                   radius         : 52,
                   backgroundColor: bgCard,
-                  backgroundImage:
-                      avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                  backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
                   child: avatarUrl == null
                       ? const Icon(Icons.person, color: green, size: 52)
                       : null,
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color       : gold,
+                  color    : gold,
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                        color: gold.withValues(alpha: 0.5),
-                        blurRadius: 8),
-                  ],
+                  boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.5), blurRadius: 8)],
                 ),
                 child: Text(
                   'LV $level',
                   style: const TextStyle(
-                      color      : Colors.black,
-                      fontWeight : FontWeight.w900,
-                      fontSize   : 11,
+                      color        : Colors.black,
+                      fontWeight   : FontWeight.w900,
+                      fontSize     : 11,
                       letterSpacing: 1),
                 ),
               ),
@@ -337,9 +321,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           const SizedBox(height: 12),
           Text(username,
               style: const TextStyle(
-                  color      : textMain,
-                  fontSize   : 22,
-                  fontWeight : FontWeight.bold,
+                  color        : textMain,
+                  fontSize     : 22,
+                  fontWeight   : FontWeight.bold,
                   letterSpacing: 1.5)),
           const SizedBox(height: 4),
           Text(FirebaseAuth.instance.currentUser?.email ?? '',
@@ -378,7 +362,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ── Combat Power ─────────────────────────────────────────────────────────────
   Widget _buildCombatPowerStrip() {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -390,9 +373,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: purple.withValues(alpha: 0.5)),
         boxShadow: [
-          BoxShadow(
-              color    : purple.withValues(alpha: 0.15),
-              blurRadius: 12),
+          BoxShadow(color: purple.withValues(alpha: 0.15), blurRadius: 12),
         ],
       ),
       child: Row(
@@ -403,8 +384,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('COMBAT POWER',
-                  style: TextStyle(
-                      color: textSub, fontSize: 10, letterSpacing: 2)),
+                  style: TextStyle(color: textSub, fontSize: 10, letterSpacing: 2)),
               SizedBox(height: 2),
               Text('HERO STRENGTH RATING',
                   style: TextStyle(color: textSub, fontSize: 9)),
@@ -416,9 +396,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                 RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
                 (m) => '${m[1]},'),
             style: const TextStyle(
-                color      : purple,
-                fontSize   : 28,
-                fontWeight : FontWeight.w900,
+                color        : purple,
+                fontSize     : 28,
+                fontWeight   : FontWeight.w900,
                 letterSpacing: 1),
           ),
         ],
@@ -426,9 +406,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ── Currency row ─────────────────────────────────────────────────────────────
-  Widget _buildCurrencyRow(
-      {required int coins, required int gems, required int souls}) {
+  Widget _buildCurrencyRow({required int coins, required int gems, required int souls}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Row(
@@ -443,8 +421,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _currencyChip(
-      String icon, String value, String label, Color color) {
+  Widget _currencyChip(String icon, String value, String label, Color color) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -470,7 +447,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ── STATS Tab ────────────────────────────────────────────────────────────────
   Widget _buildStatsTab({
     required double totalKm,
     required int sessions,
@@ -515,11 +491,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       padding: const EdgeInsets.all(16),
       children: [
         Row(children: [
-          _summaryCard('🏃', '${totalKm.toStringAsFixed(1)} km',
-              'Total Distance', green),
+          _summaryCard('🏃', '${totalKm.toStringAsFixed(1)} km', 'Total Distance', green),
           const SizedBox(width: 10),
-          _summaryCard('👟',
-              '${(steps / 1000).toStringAsFixed(1)}k', 'Total Steps', teal),
+          _summaryCard('👟', '${(steps / 1000).toStringAsFixed(1)}k', 'Total Steps', teal),
           const SizedBox(width: 10),
           _summaryCard('🗓️', '$sessions', 'Sessions', gold),
         ]),
@@ -531,8 +505,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _summaryCard(
-      String icon, String value, String label, Color color) {
+  Widget _summaryCard(String icon, String value, String label, Color color) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
@@ -546,13 +519,9 @@ class _ProfileScreenState extends State<ProfileScreen>
             Text(icon, style: const TextStyle(fontSize: 22)),
             const SizedBox(height: 6),
             Text(value,
-                style: TextStyle(
-                    color     : color,
-                    fontWeight: FontWeight.bold,
-                    fontSize  : 16)),
+                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
             Text(label,
-                style: const TextStyle(
-                    color: textSub, fontSize: 9, letterSpacing: 0.5),
+                style: const TextStyle(color: textSub, fontSize: 9, letterSpacing: 0.5),
                 textAlign: TextAlign.center),
           ],
         ),
@@ -589,8 +558,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             ],
           ),
           const SizedBox(height: 4),
-          Text(stat.desc,
-              style: const TextStyle(color: textSub, fontSize: 10)),
+          Text(stat.desc, style: const TextStyle(color: textSub, fontSize: 10)),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(4),
@@ -606,7 +574,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ── GEAR Tab ─────────────────────────────────────────────────────────────────
   Widget _buildGearTab() {
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -653,9 +620,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         color       : bgCard,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: color.withValues(alpha: 0.5)),
-        boxShadow: [
-          BoxShadow(color: color.withValues(alpha: 0.08), blurRadius: 10),
-        ],
+        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.08), blurRadius: 10)],
       ),
       child: Padding(
         padding: const EdgeInsets.all(14),
@@ -669,9 +634,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: color.withValues(alpha: 0.6)),
               ),
-              child: Center(
-                  child: Text(gear['icon'],
-                      style: const TextStyle(fontSize: 26))),
+              child: Center(child: Text(gear['icon'], style: const TextStyle(fontSize: 26))),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -687,33 +650,25 @@ class _ProfileScreenState extends State<ProfileScreen>
                               fontSize  : 14)),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
                           color       : color.withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                              color: color.withValues(alpha: 0.4)),
+                          border: Border.all(color: color.withValues(alpha: 0.4)),
                         ),
                         child: Text(rarity,
                             style: TextStyle(
-                                color      : color,
-                                fontSize   : 9,
-                                fontWeight : FontWeight.bold,
+                                color        : color,
+                                fontSize     : 9,
+                                fontWeight   : FontWeight.bold,
                                 letterSpacing: 0.5)),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Text(gear['slot'],
-                      style: const TextStyle(
-                          color: textSub, fontSize: 11)),
+                  Text(gear['slot'], style: const TextStyle(color: textSub, fontSize: 11)),
                   const SizedBox(height: 8),
-                  Wrap(
-                    spacing   : 6,
-                    runSpacing: 4,
-                    children  : _gearStatChips(gear),
-                  ),
+                  Wrap(spacing: 6, runSpacing: 4, children: _gearStatChips(gear)),
                 ],
               ),
             ),
@@ -745,40 +700,64 @@ class _ProfileScreenState extends State<ProfileScreen>
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text('$label +$val',
-              style: TextStyle(
-                  color     : color,
-                  fontSize  : 10,
-                  fontWeight: FontWeight.w600)),
+              style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
         ));
       }
     }
     return chips;
   }
 
-  // ── RECORDS Tab ──────────────────────────────────────────────────────────────
-  Widget _buildRecordsTab(
-      {required double totalKm, required int sessions}) {
+  // ── RECORDS Tab — real Firestore data ────────────────────────────────────
+  Widget _buildRecordsTab() {
+    // Pull real values from Firestore, fall back to 0 / defaults
+    final longestRunKm  = (_userData?['longest_run_km']   ?? 0.0) as double;
+    final bestPaceSecs  = (_userData?['best_pace_secs']   ?? 0)   as int;   // stored as total seconds per km
+    final longestStreak = (_userData?['longest_streak']   ?? 0)   as int;
+    final coinsEarned   = (_userData?['coins']            ?? 0)   as int;
+
+    // Format pace as m:ss /km
+    String paceLabel = '—';
+    if (bestPaceSecs > 0) {
+      final m = bestPaceSecs ~/ 60;
+      final s = bestPaceSecs  % 60;
+      paceLabel = '$m:${s.toString().padLeft(2, '0')} /km';
+    }
+
+    final longestRunLabel  = longestRunKm  > 0 ? '${longestRunKm.toStringAsFixed(1)} km' : '—';
+    final longestStreakLabel = '$longestStreak day${longestStreak == 1 ? '' : 's'}';
+    final coinsLabel       = coinsEarned.toString().replaceAllMapped(
+        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+
     final records = [
-      _Record('🏆', 'Longest Run',       '5.4 km',   green),
-      _Record('⚡', 'Best Pace',          '5:12 /km', teal),
-      _Record('🔥', 'Longest Streak',    '7 days',   gold),
-      _Record('💀', 'Survival Attempts', '12',        purple),
-      _Record('🌟', 'Stages Cleared',    '3',         red),
-      _Record('💰', 'Coins Earned',      '1,450',    gold),
+      _Record('🏆', 'Longest Run',    longestRunLabel,   green),
+      _Record('⚡', 'Best Pace',       paceLabel,         teal),
+      _Record('🔥', 'Longest Streak', longestStreakLabel, gold),
+      _Record('💰', 'Coins Earned',   coinsLabel,        gold),
+    ];
+
+    // Achievement unlock conditions based on real stats
+    final totalKm  = (_userData?['total_km']       ?? 0.0) as double;
+    final sessions = (_userData?['total_sessions'] ?? 0)   as int;
+
+    final ach = [
+      ('🏃', 'First Mile',  totalKm >= 1.6),
+      ('🌟', '5K Hero',     totalKm >= 5.0),
+      ('💪', '10K Legend',  totalKm >= 10.0),
+      ('🔥', 'Week Streak', longestStreak >= 7),
+      ('👑', 'Gacha King',  false),             // future: track gacha pulls
+      ('⚔️', 'Survivor',    sessions >= 10),
     ];
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const _SectionHeader(
-            label: 'PERSONAL RECORDS', icon: Icons.emoji_events),
+        const _SectionHeader(label: 'PERSONAL RECORDS', icon: Icons.emoji_events),
         const SizedBox(height: 10),
         ...records.map((r) => _buildRecordRow(r)),
         const SizedBox(height: 20),
-        const _SectionHeader(
-            label: 'ACHIEVEMENTS', icon: Icons.military_tech),
+        const _SectionHeader(label: 'ACHIEVEMENTS', icon: Icons.military_tech),
         const SizedBox(height: 10),
-        _buildAchievementGrid(),
+        _buildAchievementGrid(ach),
       ],
     );
   }
@@ -796,8 +775,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           Text(r.icon, style: const TextStyle(fontSize: 22)),
           const SizedBox(width: 14),
-          Text(r.label,
-              style: const TextStyle(color: textSub, fontSize: 13)),
+          Text(r.label, style: const TextStyle(color: textSub, fontSize: 13)),
           const Spacer(),
           Text(r.value,
               style: TextStyle(
@@ -809,15 +787,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildAchievementGrid() {
-    final ach = [
-      ('🏃', 'First Mile',  true),
-      ('🌟', '5K Hero',     true),
-      ('💪', '10K Legend',  false),
-      ('🔥', 'Week Streak', true),
-      ('👑', 'Gacha King',  false),
-      ('⚔️', 'Survivor',    false),
-    ];
+  Widget _buildAchievementGrid(List<(String, String, bool)> ach) {
     return GridView.builder(
       shrinkWrap: true,
       physics   : const NeverScrollableScrollPhysics(),
@@ -834,9 +804,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             color       : unlocked ? bgCard : bgPanel,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-                color: unlocked
-                    ? gold.withValues(alpha: 0.5)
-                    : greenDim),
+                color: unlocked ? gold.withValues(alpha: 0.5) : greenDim),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -844,9 +812,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               Text(icon,
                   style: TextStyle(
                       fontSize: 28,
-                      color: unlocked
-                          ? null
-                          : const Color(0xFF2A2A2A))),
+                      color: unlocked ? null : const Color(0xFF2A2A2A))),
               const SizedBox(height: 6),
               Text(label,
                   style: TextStyle(
@@ -863,8 +829,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 }
-
-// ── Data classes ──────────────────────────────────────────────────────────────
 
 class _SlayerStat {
   final String  icon;
@@ -891,8 +855,6 @@ class _Record {
   const _Record(this.icon, this.label, this.value, this.color);
 }
 
-// ── Section Header ────────────────────────────────────────────────────────────
-
 class _SectionHeader extends StatelessWidget {
   final String   label;
   final IconData icon;
@@ -912,10 +874,7 @@ class _SectionHeader extends StatelessWidget {
                 fontWeight   : FontWeight.bold,
                 letterSpacing: 3)),
         const SizedBox(width: 12),
-        Expanded(
-          child:
-              Container(height: 1, color: const Color(0xFF1A4D30)),
-        ),
+        Expanded(child: Container(height: 1, color: const Color(0xFF1A4D30))),
       ],
     );
   }
