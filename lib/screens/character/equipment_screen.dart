@@ -263,9 +263,6 @@ class _EquipmentScreenState extends State<EquipmentScreen>
             },
           ),
           const Spacer(),
-          // Mana Crystals chip
-          _GemChip(value: _loadingCurrency ? '...' : '$_manaCrystals'),
-          const SizedBox(width: 10),
           const Icon(Icons.settings, color: textSub, size: 20),
         ],
       ),

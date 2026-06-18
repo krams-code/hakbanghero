@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart' hide ActivityType;import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart' hide ActivityType;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/activity_model.dart';
+import '../../models/daily_quest_definitions.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Pre-run: user picks activity type, then tracking begins
@@ -45,6 +47,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   // ── Saving ─────────────────────────────────────────────────────────────────
   bool _isSaving = false;
 
+  // Quests completed during this save (shown in summary)
+  List<DailyQuest> _newlyCompletedQuests = [];
+
   @override
   void initState() {
     super.initState();
@@ -73,7 +78,6 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   ActivityType get _detectedType =>
       ActivityTypeExt.fromSpeed(_currentSpeedKmh);
 
-  // When speed is meaningful (>0.5 km/h), override user pick
   ActivityType get _effectiveType =>
       _currentSpeedKmh > 0.5 ? _detectedType : _userPick;
 
@@ -112,12 +116,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   Future<bool> _requestPermission() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      if (mounted) {
-        _showSnack('Please enable GPS/Location services on your device.');
-      }
+      if (mounted) _showSnack('Please enable GPS/Location services on your device.');
       return false;
     }
-
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
@@ -127,9 +128,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       }
     }
     if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
-        _showSnack('Location permission permanently denied. Enable it in settings.');
-      }
+      if (mounted) _showSnack('Location permission permanently denied. Enable it in settings.');
       return false;
     }
     return true;
@@ -150,25 +149,20 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       _routePoints.clear();
     });
 
-    // Timer
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!_isPaused && mounted) {
-        setState(() => _elapsedSeconds++);
-      }
+      if (!_isPaused && mounted) setState(() => _elapsedSeconds++);
     });
 
-    // GPS
     const locationSettings = LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 5, // meters — update every 5 m moved
+      distanceFilter: 5,
     );
 
     _positionSub = Geolocator.getPositionStream(
       locationSettings: locationSettings,
     ).listen((Position pos) {
       if (!mounted || _isPaused) return;
-
-      final speedKmh = (pos.speed * 3.6).clamp(0.0, 60.0); // m/s → km/h
+      final speedKmh = (pos.speed * 3.6).clamp(0.0, 60.0);
 
       if (_lastPosition != null) {
         final delta = Geolocator.distanceBetween(
@@ -176,23 +170,18 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
           _lastPosition!.longitude,
           pos.latitude,
           pos.longitude,
-        ) / 1000.0; // meters → km
+        ) / 1000.0;
 
-        // Filter out GPS jitter (ignore < 2 m jumps or > 50 m jumps)
         if (delta > 0.002 && delta < 0.05) {
           setState(() {
             _distanceKm += delta;
             _currentSpeedKmh = speedKmh;
             if (speedKmh > _maxSpeedKmh) _maxSpeedKmh = speedKmh;
             _speedSamples.add(speedKmh);
-            _routePoints.add({
-              'lat': pos.latitude,
-              'lng': pos.longitude,
-            });
+            _routePoints.add({'lat': pos.latitude, 'lng': pos.longitude});
           });
         }
       }
-
       _lastPosition = pos;
     });
   }
@@ -206,11 +195,12 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     }
   }
 
+  // ── Stop & Save (with daily quest transaction) ─────────────────────────────
   Future<void> _stopAndSave() async {
     _positionSub?.cancel();
     _timer?.cancel();
 
-    // Determine final activity type: majority of speed samples decides
+    // Determine final activity type by majority vote of speed samples
     ActivityType finalType = _userPick;
     if (_speedSamples.isNotEmpty) {
       int walkCount = 0, jogCount = 0, runCount = 0;
@@ -229,15 +219,15 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       }
     }
 
-    // XP & coin formula
-    final xp = (_distanceKm * 100 + _elapsedSeconds / 60 * 5).toInt();
+    final xp    = (_distanceKm * 100 + _elapsedSeconds / 60 * 5).toInt();
     final coins = (_distanceKm * 10).toInt();
+    final sessionStart = DateTime.now().subtract(Duration(seconds: _elapsedSeconds));
 
     final session = ActivitySession(
       id:              '',
       type:            finalType,
       userPick:        _userPick,
-      startTime:       DateTime.now().subtract(Duration(seconds: _elapsedSeconds)),
+      startTime:       sessionStart,
       endTime:         DateTime.now(),
       distanceKm:      double.parse(_distanceKm.toStringAsFixed(3)),
       durationSeconds: _elapsedSeconds,
@@ -253,35 +243,91 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       _isSaving = true;
     });
 
-    // Save to Firestore
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null) {
-        final ref = FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .collection('activities');
-        await ref.add(session.toFirestore());
+        final db      = FirebaseFirestore.instance;
+        final userRef = db.collection('users').doc(user.uid);
+        final actRef  = userRef.collection('activities');
 
-        // Update user totals
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({
+        // 1. Save the activity document
+        await actRef.add(session.toFirestore());
+
+        // 2. Update base user totals (xp, coins, km, sessions)
+        await userRef.update({
           'total_km':       FieldValue.increment(session.distanceKm),
           'total_sessions': FieldValue.increment(1),
           'xp':             FieldValue.increment(xp),
           'coins':          FieldValue.increment(coins),
         });
+
+        // 3. Daily quest progress transaction
+        final todayStr = _todayDateString();
+        final completedQuests = <DailyQuest>[];
+
+        await db.runTransaction((txn) async {
+          final snap = await txn.get(userRef);
+          final data = snap.data() ?? {};
+
+          // ── Read existing daily progress ──────────────────────────────────
+          final storedDate = data['daily_progress_date'] as String? ?? '';
+          double dailyKm   = (data['daily_progress_km'] as num?)?.toDouble() ?? 0.0;
+          Map<String, dynamic> claimedMap =
+              Map<String, dynamic>.from(data['daily_quests_claimed'] as Map? ?? {});
+
+          // ── Reset if it's a new day ───────────────────────────────────────
+          if (storedDate != todayStr) {
+            dailyKm   = 0.0;
+            claimedMap = {};
+          }
+
+          // ── Add this session's distance ───────────────────────────────────
+          dailyKm += session.distanceKm;
+
+          // ── Check quest thresholds ────────────────────────────────────────
+          int crystalsToAdd = 0;
+          for (final quest in kDailyQuests) {
+            if (claimedMap[quest.id] == true) continue; // already claimed today
+
+            // Time-gated quests (e.g. before 9 AM): check session start hour
+            if (quest.beforeHour != null &&
+                sessionStart.hour >= quest.beforeHour!) {
+              continue; // session started too late for this quest
+            }
+
+            if (dailyKm >= quest.thresholdKm) {
+              claimedMap[quest.id] = true;
+              crystalsToAdd += quest.crystalReward;
+              completedQuests.add(quest);
+            }
+          }
+
+          // ── Write everything back in one transaction ──────────────────────
+          final Map<String, dynamic> updates = {
+            'daily_progress_km':     dailyKm,
+            'daily_progress_date':   todayStr,
+            'daily_quests_claimed':  claimedMap,
+          };
+          if (crystalsToAdd > 0) {
+            updates['gems'] = FieldValue.increment(crystalsToAdd);
+          }
+          txn.update(userRef, updates);
+        });
+
+        _newlyCompletedQuests = completedQuests;
       }
     } catch (e) {
       debugPrint('Error saving activity: $e');
     }
 
     if (mounted) setState(() => _isSaving = false);
-
-    // Show summary with the completed session
     _showSummarySheet(session);
+  }
+
+  /// Returns today's date as 'YYYY-MM-DD' in local time.
+  String _todayDateString() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 
   void _showSummarySheet(ActivitySession session) {
@@ -293,9 +339,10 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       builder: (_) => _SummarySheet(
         session: session,
         isSaving: _isSaving,
+        completedQuests: _newlyCompletedQuests,
         onDone: () {
-          Navigator.of(context).pop(); // close sheet
-          Navigator.of(context).pop(); // back to home
+          Navigator.of(context).pop();
+          Navigator.of(context).pop();
         },
       ),
     );
@@ -303,10 +350,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: const Color(0xFF1A3A1A),
-      ),
+      SnackBar(content: Text(msg), backgroundColor: const Color(0xFF1A3A1A)),
     );
   }
 
@@ -317,9 +361,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       backgroundColor: const Color(0xFF060C06),
       body: FadeTransition(
         opacity: _fade,
-        child: _phase == _Phase.preRun
-            ? _buildPreRun()
-            : _buildTracking(),
+        child: _phase == _Phase.preRun ? _buildPreRun() : _buildTracking(),
       ),
     );
   }
@@ -329,7 +371,6 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     return SafeArea(
       child: Column(
         children: [
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Row(
@@ -343,8 +384,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: const Color(0xFF2A4A2A)),
                     ),
-                    child: const Icon(Icons.arrow_back,
-                        color: Color(0xFF00FF41), size: 20),
+                    child: const Icon(Icons.arrow_back, color: Color(0xFF00FF41), size: 20),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -360,10 +400,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               ],
             ),
           ),
-
           const SizedBox(height: 40),
-
-          // Big icon
           ScaleTransition(
             scale: _pulse,
             child: Container(
@@ -383,13 +420,10 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                   ),
                 ],
               ),
-              child: const Icon(Icons.directions_run,
-                  color: Color(0xFF00FF41), size: 52),
+              child: const Icon(Icons.directions_run, color: Color(0xFF00FF41), size: 52),
             ),
           ),
-
           const SizedBox(height: 32),
-
           const Text(
             'SELECT ACTIVITY',
             style: TextStyle(
@@ -399,10 +433,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               fontWeight: FontWeight.w600,
             ),
           ),
-
           const SizedBox(height: 20),
-
-          // Activity type selector
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
@@ -415,10 +446,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                   .toList(),
             ),
           ),
-
           const SizedBox(height: 16),
-
-          // Speed info
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Container(
@@ -439,24 +467,16 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               ),
             ),
           ),
-
           const SizedBox(height: 8),
-
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
               'Your selection will be confirmed by GPS speed during the session.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: const Color(0xFF3A6A3A),
-                fontSize: 11,
-              ),
+              style: TextStyle(color: const Color(0xFF3A6A3A), fontSize: 11),
             ),
           ),
-
           const Spacer(),
-
-          // Start button
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
             child: SizedBox(
@@ -466,9 +486,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                 onPressed: _startTracking,
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                 ),
                 child: Ink(
                   decoration: BoxDecoration(
@@ -482,8 +500,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.play_arrow,
-                            color: Color(0xFF0A0F0A), size: 26),
+                        const Icon(Icons.play_arrow, color: Color(0xFF0A0F0A), size: 26),
                         const SizedBox(width: 8),
                         Text(
                           'BEGIN ${_userPick.label.toUpperCase()}',
@@ -511,7 +528,6 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     return SafeArea(
       child: Column(
         children: [
-          // Top bar
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
             child: Row(
@@ -525,8 +541,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                   ),
                   child: Row(
                     children: [
-                      Text(_effectiveType.emoji,
-                          style: const TextStyle(fontSize: 16)),
+                      Text(_effectiveType.emoji, style: const TextStyle(fontSize: 16)),
                       const SizedBox(width: 6),
                       Text(
                         _effectiveType.label.toUpperCase(),
@@ -543,13 +558,11 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                 const Spacer(),
                 if (_isPaused)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFF6B35).withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: const Color(0xFFFF6B35).withOpacity(0.4)),
+                      border: Border.all(color: const Color(0xFFFF6B35).withOpacity(0.4)),
                     ),
                     child: const Text(
                       '⏸ PAUSED',
@@ -564,10 +577,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               ],
             ),
           ),
-
           const SizedBox(height: 24),
-
-          // Timer
           Text(
             _formattedTime,
             style: const TextStyle(
@@ -578,35 +588,21 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               fontFeatures: [FontFeature.tabularFigures()],
             ),
           ),
-
           const SizedBox(height: 8),
-
           const Text(
             'ELAPSED TIME',
-            style: TextStyle(
-              color: Color(0xFF3A5A3A),
-              fontSize: 10,
-              letterSpacing: 3,
-            ),
+            style: TextStyle(color: Color(0xFF3A5A3A), fontSize: 10, letterSpacing: 3),
           ),
-
           const SizedBox(height: 32),
-
-          // Speedometer ring
           AnimatedBuilder(
             animation: _pulse,
-            builder: (_, __) {
-              return _SpeedometerWidget(
-                speedKmh: _currentSpeedKmh,
-                activityColor: _activityColor,
-                pulseValue: _isPaused ? 0.9 : _pulse.value,
-              );
-            },
+            builder: (_, __) => _SpeedometerWidget(
+              speedKmh: _currentSpeedKmh,
+              activityColor: _activityColor,
+              pulseValue: _isPaused ? 0.9 : _pulse.value,
+            ),
           ),
-
           const SizedBox(height: 32),
-
-          // Stats row
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
@@ -632,15 +628,11 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               ],
             ),
           ),
-
           const Spacer(),
-
-          // Controls
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
             child: Row(
               children: [
-                // Pause / Resume
                 Expanded(
                   child: GestureDetector(
                     onTap: _togglePause,
@@ -653,20 +645,17 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                       ),
                       child: Icon(
                         _isPaused ? Icons.play_arrow : Icons.pause,
-                        color: _isPaused
-                            ? const Color(0xFF00FF41)
-                            : const Color(0xFFFFD700),
+                        color: _isPaused ? const Color(0xFF00FF41) : const Color(0xFFFFD700),
                         size: 30,
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 14),
-                // Stop
                 Expanded(
                   flex: 2,
                   child: GestureDetector(
-                    onTap: () => _confirmStop(),
+                    onTap: _confirmStop,
                     child: Container(
                       height: 60,
                       decoration: BoxDecoration(
@@ -684,8 +673,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                       child: const Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.stop_circle_outlined,
-                              color: Colors.white, size: 24),
+                          Icon(Icons.stop_circle_outlined, color: Colors.white, size: 24),
                           SizedBox(width: 8),
                           Text(
                             'FINISH',
@@ -734,16 +722,14 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('KEEP GOING',
-                style: TextStyle(color: Color(0xFF00FF41))),
+            child: const Text('KEEP GOING', style: TextStyle(color: Color(0xFF00FF41))),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _stopAndSave();
             },
-            child: const Text('FINISH',
-                style: TextStyle(color: Color(0xFFCC2200))),
+            child: const Text('FINISH', style: TextStyle(color: Color(0xFFCC2200))),
           ),
         ],
       ),
@@ -769,16 +755,13 @@ class _SpeedometerWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Max visual speed = 20 km/h
     final fraction = (speedKmh / 20.0).clamp(0.0, 1.0);
-
     return SizedBox(
       width: 180,
       height: 180,
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Outer glow
           Transform.scale(
             scale: pulseValue,
             child: Container(
@@ -796,12 +779,10 @@ class _SpeedometerWidget extends StatelessWidget {
               ),
             ),
           ),
-          // Arc
           CustomPaint(
             size: const Size(170, 170),
             painter: _ArcPainter(fraction: fraction, color: activityColor),
           ),
-          // Speed text
           Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -833,7 +814,6 @@ class _SpeedometerWidget extends StatelessWidget {
 class _ArcPainter extends CustomPainter {
   final double fraction;
   final Color color;
-
   const _ArcPainter({required this.fraction, required this.color});
 
   @override
@@ -843,26 +823,19 @@ class _ArcPainter extends CustomPainter {
     const startAngle = math.pi * 0.75;
     const sweepMax  = math.pi * 1.5;
 
-    // Background arc
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
-      startAngle,
-      sweepMax,
-      false,
+      startAngle, sweepMax, false,
       Paint()
         ..color = color.withOpacity(0.12)
         ..strokeWidth = 10
         ..style = PaintingStyle.stroke
         ..strokeCap = StrokeCap.round,
     );
-
-    // Filled arc
     if (fraction > 0) {
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        sweepMax * fraction,
-        false,
+        startAngle, sweepMax * fraction, false,
         Paint()
           ..color = color
           ..strokeWidth = 10
@@ -969,30 +942,13 @@ class _TrackStat extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            Text(
-              unit,
-              style: const TextStyle(
-                color: Color(0xFF3A5A3A),
-                fontSize: 9,
-              ),
-            ),
+            Text(value,
+                style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(unit, style: const TextStyle(color: Color(0xFF3A5A3A), fontSize: 9)),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF3A6A3A),
-                fontSize: 8,
-                letterSpacing: 0.5,
-              ),
-            ),
+            Text(label,
+                style: const TextStyle(
+                    color: Color(0xFF3A6A3A), fontSize: 8, letterSpacing: 0.5)),
           ],
         ),
       ),
@@ -1008,11 +964,7 @@ class _SpeedInfo extends StatelessWidget {
   final String range;
   final Color color;
 
-  const _SpeedInfo({
-    required this.label,
-    required this.range,
-    required this.color,
-  });
+  const _SpeedInfo({required this.label, required this.range, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -1021,24 +973,25 @@ class _SpeedInfo extends StatelessWidget {
         Text(label,
             style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
         const Spacer(),
-        Text(range,
-            style: const TextStyle(color: Color(0xFF4A7A4A), fontSize: 12)),
+        Text(range, style: const TextStyle(color: Color(0xFF4A7A4A), fontSize: 12)),
       ],
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Summary bottom sheet
+//  Summary bottom sheet  (now shows quest completions)
 // ─────────────────────────────────────────────────────────────────────────────
 class _SummarySheet extends StatelessWidget {
   final ActivitySession session;
   final bool isSaving;
+  final List<DailyQuest> completedQuests;
   final VoidCallback onDone;
 
   const _SummarySheet({
     required this.session,
     required this.isSaving,
+    required this.completedQuests,
     required this.onDone,
   });
 
@@ -1052,184 +1005,241 @@ class _SummarySheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final totalCrystals =
+        completedQuests.fold<int>(0, (sum, q) => sum + q.crystalReward);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
       decoration: const BoxDecoration(
         color: Color(0xFF0D1A0D),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Handle
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: const Color(0xFF2A4A2A),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Trophy
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _typeColor.withOpacity(0.12),
-              border: Border.all(color: _typeColor.withOpacity(0.4), width: 2),
-            ),
-            child: Center(
-              child: Text(session.type.emoji,
-                  style: const TextStyle(fontSize: 32)),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          Text(
-            'SESSION COMPLETE!',
-            style: TextStyle(
-              color: _typeColor,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          Text(
-            '${session.type.label} • ${session.formattedDuration}',
-            style: const TextStyle(color: Color(0xFF4A8A4A), fontSize: 13),
-          ),
-
-          const SizedBox(height: 24),
-
-          // Stats grid
-          Row(
-            children: [
-              _SummaryStat(
-                label: 'DISTANCE',
-                value: '${session.distanceKm.toStringAsFixed(2)} km',
-                color: _typeColor,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2A4A2A),
+                borderRadius: BorderRadius.circular(2),
               ),
-              _SummaryStat(
-                label: 'AVG PACE',
-                value: session.formattedPace,
-                color: const Color(0xFFFFD700),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              _SummaryStat(
-                label: 'MAX SPEED',
-                value: '${session.maxSpeedKmh.toStringAsFixed(1)} km/h',
-                color: const Color(0xFFFF6B35),
-              ),
-              _SummaryStat(
-                label: 'AVG SPEED',
-                value: '${session.avgSpeedKmh.toStringAsFixed(1)} km/h',
-                color: const Color(0xFF00CFFF),
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // Rewards
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A1A0A),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF1A4A1A)),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            const SizedBox(height: 24),
+
+            // Trophy icon
+            Container(
+              width: 72, height: 72,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _typeColor.withOpacity(0.12),
+                border: Border.all(color: _typeColor.withOpacity(0.4), width: 2),
+              ),
+              child: Center(
+                child: Text(session.type.emoji, style: const TextStyle(fontSize: 32)),
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            Text(
+              'SESSION COMPLETE!',
+              style: TextStyle(
+                color: _typeColor, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 2,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${session.type.label} • ${session.formattedDuration}',
+              style: const TextStyle(color: Color(0xFF4A8A4A), fontSize: 13),
+            ),
+            const SizedBox(height: 24),
+
+            // Stats grid
+            Row(
               children: [
-                const Icon(Icons.star, color: Color(0xFFFFD700), size: 16),
-                const SizedBox(width: 6),
-                Text(
-                  '+${session.xpEarned} XP',
-                  style: const TextStyle(
-                    color: Color(0xFFFFD700),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
+                _SummaryStat(
+                  label: 'DISTANCE',
+                  value: '${session.distanceKm.toStringAsFixed(2)} km',
+                  color: _typeColor,
                 ),
-                const SizedBox(width: 20),
-                const Icon(Icons.monetization_on,
-                    color: Color(0xFFFFD700), size: 16),
-                const SizedBox(width: 6),
-                Text(
-                  '+${session.coinsEarned} coins',
-                  style: const TextStyle(
-                    color: Color(0xFFFFD700),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
+                _SummaryStat(
+                  label: 'AVG PACE',
+                  value: session.formattedPace,
+                  color: const Color(0xFFFFD700),
                 ),
               ],
             ),
-          ),
-
-          if (session.userPick != session.type) ...[
             const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFF1A1A0A),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF3A3A1A)),
-              ),
-              child: Text(
-                '⚡ You selected ${session.userPick.label} but GPS confirmed ${session.type.label}!',
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFFCCCC44),
-                  fontSize: 11,
+            Row(
+              children: [
+                _SummaryStat(
+                  label: 'MAX SPEED',
+                  value: '${session.maxSpeedKmh.toStringAsFixed(1)} km/h',
+                  color: const Color(0xFFFF6B35),
                 ),
+                _SummaryStat(
+                  label: 'AVG SPEED',
+                  value: '${session.avgSpeedKmh.toStringAsFixed(1)} km/h',
+                  color: const Color(0xFF00CFFF),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // XP + Coins rewards
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A1A0A),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFF1A4A1A)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.star, color: Color(0xFFFFD700), size: 16),
+                  const SizedBox(width: 6),
+                  Text('+${session.xpEarned} XP',
+                      style: const TextStyle(
+                          color: Color(0xFFFFD700), fontSize: 14, fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 20),
+                  const Icon(Icons.monetization_on, color: Color(0xFFFFD700), size: 16),
+                  const SizedBox(width: 6),
+                  Text('+${session.coinsEarned} coins',
+                      style: const TextStyle(
+                          color: Color(0xFFFFD700), fontSize: 14, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+
+            // ── Quest completion banner ──────────────────────────────────────
+            if (completedQuests.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A0D1A),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFF00CFFF).withOpacity(0.5)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF00CFFF).withOpacity(0.1),
+                      blurRadius: 12,
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('💎', style: TextStyle(fontSize: 16)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'QUEST${completedQuests.length > 1 ? 'S' : ''} COMPLETED!',
+                          style: const TextStyle(
+                            color: Color(0xFF00CFFF),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    ...completedQuests.map((q) => Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            children: [
+                              Icon(q.icon, color: q.color, size: 16),
+                              const SizedBox(width: 8),
+                              Text(
+                                q.title,
+                                style: TextStyle(
+                                  color: q.color,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                '+${q.crystalReward} 💎',
+                                style: const TextStyle(
+                                  color: Color(0xFF00CFFF),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )),
+                    if (completedQuests.length > 1) ...[
+                      const Divider(color: Color(0xFF1A2A3A), height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            'Total: +$totalCrystals 💎 Mana Crystals',
+                            style: const TextStyle(
+                              color: Color(0xFF00CFFF),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+
+            if (session.userPick != session.type) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A0A),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFF3A3A1A)),
+                ),
+                child: Text(
+                  '⚡ You selected ${session.userPick.label} but GPS confirmed ${session.type.label}!',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFFCCCC44), fontSize: 11),
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 24),
+
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton(
+                onPressed: isSaving ? null : onDone,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _typeColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: isSaving
+                    ? const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
+                    : const Text(
+                        'DONE',
+                        style: TextStyle(
+                          color: Color(0xFF0A0F0A),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 2,
+                        ),
+                      ),
               ),
             ),
           ],
-
-          const SizedBox(height: 24),
-
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton(
-              onPressed: isSaving ? null : onDone,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _typeColor,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          color: Colors.black, strokeWidth: 2))
-                  : const Text(
-                      'DONE',
-                      style: TextStyle(
-                        color: Color(0xFF0A0F0A),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 2,
-                      ),
-                    ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1240,11 +1250,7 @@ class _SummaryStat extends StatelessWidget {
   final String value;
   final Color color;
 
-  const _SummaryStat({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
+  const _SummaryStat({required this.label, required this.value, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -1259,23 +1265,12 @@ class _SummaryStat extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text(
-              value,
-              style: TextStyle(
-                color: color,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            Text(value,
+                style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF3A5A3A),
-                fontSize: 9,
-                letterSpacing: 0.5,
-              ),
-            ),
+            Text(label,
+                style: const TextStyle(
+                    color: Color(0xFF3A5A3A), fontSize: 9, letterSpacing: 0.5)),
           ],
         ),
       ),

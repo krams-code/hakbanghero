@@ -314,31 +314,30 @@ class _ActivityScreenState extends State<ActivityScreen>
         }
 
         return SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final keys = grouped.keys.toList();
-              if (index >= keys.length * 2) return null; // header + list each group
+  delegate: SliverChildBuilderDelegate(
+    (context, index) {
+      final keys = grouped.keys.toList();
 
-              // Build flat list: [header, card, card, header, card, ...]
-              final items = <Widget>[];
-              for (final key in keys) {
-                items.add(_DateHeader(date: key));
-                for (final session in grouped[key]!) {
-                  items.add(_ActivityCard(session: session));
-                }
-              }
-              if (index >= items.length) return null;
-              return items[index];
-            },
-            childCount: () {
-              int count = 0;
-              for (final key in grouped.keys) {
-                count += 1 + grouped[key]!.length; // header + cards
-              }
-              return count;
-            }(),
-          ),
-        );
+      // Build flat list: [header, card, card, header, card, ...]
+      final items = <Widget>[];
+      for (final key in keys) {
+        items.add(_DateHeader(date: key));
+        for (final session in grouped[key]!) {
+          items.add(_ActivityCard(session: session));
+        }
+      }
+      if (index >= items.length) return null;
+      return items[index];
+    },
+    childCount: () {
+      int count = 0;
+      for (final key in grouped.keys) {
+        count += 1 + grouped[key]!.length; // header + cards
+      }
+      return count;
+    }(),
+  ),
+);
       },
     );
   }
