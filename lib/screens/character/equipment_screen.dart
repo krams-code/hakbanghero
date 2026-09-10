@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_colors.dart';
 
 // ══════════════════════════════════════════════════════════════════════════════
-//  equipment_screen.dart  —  HakbangHero  (Slayer Legends style)
+//  equipment_screen.dart  —  HakbangHero
 // ══════════════════════════════════════════════════════════════════════════════
 
 class EquipmentScreen extends StatefulWidget {
@@ -15,26 +16,19 @@ class EquipmentScreen extends StatefulWidget {
 
 class _EquipmentScreenState extends State<EquipmentScreen>
     with SingleTickerProviderStateMixin {
-  static const Color bgDeep   = Color(0xFF060C06);
-  static const Color bgPanel  = Color(0xFF0A140A);
-  static const Color bgCard   = Color(0xFF0F1E0F);
-  static const Color green    = Color(0xFF00FF41);
-  static const Color greenDim = Color(0xFF1A4A1A);
-  static const Color gold     = Color(0xFFFFD700);
-  static const Color purple   = Color(0xFF9B59FF);
-  static const Color red      = Color(0xFFFF4444);
-  static const Color teal     = Color(0xFF00E5CC);
-  static const Color textMain = Color(0xFFE0F0E0);
-  static const Color textSub  = Color(0xFF4A6A4A);
+  static const Color bgDeep   = AppColors.bgDeep;
+  static const Color bgPanel  = AppColors.bgPanel;
+  static const Color bgCard   = AppColors.bgCard;
+  static const Color green    = AppColors.blue;
+  static const Color greenDim = AppColors.borderDim;
+  static const Color gold     = AppColors.gold;
+  static const Color purple   = AppColors.purple;
+  static const Color red      = AppColors.red;
+  static const Color teal     = AppColors.cyan;
+  static const Color textMain = AppColors.textMain;
+  static const Color textSub  = AppColors.textSub;
 
-  static const Map<String, Color> rarityColor = {
-    'Common'   : Color(0xFF9E9E9E),
-    'Uncommon' : Color(0xFF4CAF50),
-    'Rare'     : Color(0xFF2196F3),
-    'Epic'     : Color(0xFF9C27B0),
-    'Legendary': Color(0xFFFFD700),
-    'Divine'   : Color(0xFFFF6B35),
-  };
+  static const Map<String, Color> rarityColor = AppColors.rarityColor;
 
   static const List<Map<String, dynamic>> _slotDefs = [
     {'id': 'helm',    'label': 'HELM',    'icon': Icons.security,       'side': 'left'},
@@ -404,7 +398,7 @@ class _EquipmentScreenState extends State<EquipmentScreen>
       margin : const EdgeInsets.fromLTRB(12, 8, 12, 0),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [const Color(0xFF1A0A3D), purple.withValues(alpha: 0.08)]),
+        gradient: LinearGradient(colors: [purple.withValues(alpha: 0.15), bgCard]),
         borderRadius: BorderRadius.circular(10),
         border      : Border.all(color: purple.withValues(alpha: 0.28)),
       ),
@@ -428,7 +422,7 @@ class _EquipmentScreenState extends State<EquipmentScreen>
           _statBox('⚔️', 'ATK', '$_totalAtk', red),
           _statBox('🛡️', 'DEF', '$_totalDef', teal),
           _statBox('💨', 'SPD', '$_totalSpd', green),
-          _statBox('❤️', 'HP',  '$_totalHp',  const Color(0xFFFF6B6B)),
+          _statBox('❤️', 'HP',  '$_totalHp',  red),
         ],
       ),
     );
@@ -589,10 +583,10 @@ class _GemChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF7B4FFF).withValues(alpha: 0.15),
+        color: AppColors.purple.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF7B4FFF).withValues(alpha: 0.5)),
-        boxShadow: [BoxShadow(color: const Color(0xFF7B4FFF).withValues(alpha: 0.2), blurRadius: 8)],
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.5)),
+        boxShadow: [BoxShadow(color: AppColors.purple.withValues(alpha: 0.2), blurRadius: 8)],
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -600,7 +594,7 @@ class _GemChip extends StatelessWidget {
           const Text('🔮', style: TextStyle(fontSize: 14)),
           const SizedBox(width: 5),
           Text(value,
-              style: const TextStyle(color: Color(0xFFB388FF), fontWeight: FontWeight.bold, fontSize: 12)),
+              style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.bold, fontSize: 12)),
         ],
       ),
     );
@@ -623,15 +617,15 @@ class _ItemDetailSheet extends StatelessWidget {
     required this.onSell,
   });
 
-  static const Color bgPanel  = Color(0xFF0A140A);
-  static const Color bgCard   = Color(0xFF0F1E0F);
-  static const Color textMain = Color(0xFFE0F0E0);
-  static const Color textSub  = Color(0xFF4A6A4A);
-  static const Color green    = Color(0xFF00FF41);
-  static const Color red      = Color(0xFFFF4444);
-  static const Color teal     = Color(0xFF00E5CC);
-  static const Color gold     = Color(0xFFFFD700);
-  static const Color purple   = Color(0xFF9B59FF);
+  static const Color bgPanel  = AppColors.bgPanel;
+  static const Color bgCard   = AppColors.bgCard;
+  static const Color textMain = AppColors.textMain;
+  static const Color textSub  = AppColors.textSub;
+  static const Color green    = AppColors.blue;
+  static const Color red      = AppColors.red;
+  static const Color teal     = AppColors.cyan;
+  static const Color gold     = AppColors.gold;
+  static const Color purple   = AppColors.purple;
 
   @override
   Widget build(BuildContext context) {
@@ -689,7 +683,7 @@ class _ItemDetailSheet extends StatelessWidget {
               if ((item['atk'] as int) > 0) _statPill('⚔️ ATK', '+${item['atk']}', red),
               if ((item['def'] as int) > 0) _statPill('🛡️ DEF', '+${item['def']}', teal),
               if ((item['spd'] as int) > 0) _statPill('💨 SPD', '+${item['spd']}', green),
-              if ((item['hp']  as int) > 0) _statPill('❤️ HP',  '+${item['hp']}',  const Color(0xFFFF6B6B)),
+              if ((item['hp']  as int) > 0) _statPill('❤️ HP',  '+${item['hp']}',  red),
               if ((item['xp']  as int) > 0) _statPill('✨ XP+', '+${item['xp']}%', purple),
             ],
           ),
@@ -720,13 +714,13 @@ class _ItemDetailSheet extends StatelessWidget {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 13),
                     decoration: BoxDecoration(
-                      gradient    : const LinearGradient(colors: [Color(0xFF00FF41), Color(0xFF00CC33)]),
+                      gradient    : LinearGradient(colors: [AppColors.blue, AppColors.cyan]),
                       borderRadius: BorderRadius.circular(12),
                       boxShadow   : [BoxShadow(color: green.withValues(alpha: 0.3), blurRadius: 12)],
                     ),
                     child: const Text('EQUIP',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2)),
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14, letterSpacing: 2)),
                   ),
                 ),
               ),
@@ -763,17 +757,17 @@ class _ItemDetailSheet extends StatelessWidget {
 //  Hero Sprite Painter
 // ══════════════════════════════════════════════════════════════════════════════
 class _HeroSpritePainter extends CustomPainter {
-  static const _green  = Color(0xFF00FF41);
-  static const _darkBg = Color(0xFF0A1A0A);
+  static const _accent = AppColors.blue;
+  static const _darkBg = AppColors.bgCard;
 
   @override
   void paint(Canvas canvas, Size size) {
     final cx = size.width / 2;
 
     final fill       = Paint()..color = _darkBg..style = PaintingStyle.fill;
-    final stroke     = Paint()..color = _green.withValues(alpha: 0.75)..style = PaintingStyle.stroke..strokeWidth = 1.6;
-    final glow       = Paint()..color = _green.withValues(alpha: 0.12)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
-    final accentLine = Paint()..color = _green.withValues(alpha: 0.35)..strokeWidth = 0.9..style = PaintingStyle.stroke;
+    final stroke     = Paint()..color = _accent.withValues(alpha: 0.75)..style = PaintingStyle.stroke..strokeWidth = 1.6;
+    final glow       = Paint()..color = _accent.withValues(alpha: 0.12)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 10);
+    final accentLine = Paint()..color = _accent.withValues(alpha: 0.35)..strokeWidth = 0.9..style = PaintingStyle.stroke;
 
     final headCenter = Offset(cx, size.height * 0.11);
     canvas.drawCircle(headCenter, 14, glow);
@@ -799,8 +793,8 @@ class _HeroSpritePainter extends CustomPainter {
     canvas.drawPath(shoulders, fill);
     canvas.drawPath(shoulders, stroke);
 
-    canvas.drawCircle(Offset(cx - 27, size.height * 0.24), 3, Paint()..color = _green.withValues(alpha: 0.5));
-    canvas.drawCircle(Offset(cx + 27, size.height * 0.24), 3, Paint()..color = _green.withValues(alpha: 0.5));
+    canvas.drawCircle(Offset(cx - 27, size.height * 0.24), 3, Paint()..color = _accent.withValues(alpha: 0.5));
+    canvas.drawCircle(Offset(cx + 27, size.height * 0.24), 3, Paint()..color = _accent.withValues(alpha: 0.5));
 
     final torso = Path()
       ..moveTo(cx - 18, size.height * 0.33)
@@ -826,7 +820,7 @@ class _HeroSpritePainter extends CustomPainter {
       canvas.drawPath(arm, fill);
       canvas.drawPath(arm, stroke);
       canvas.drawCircle(Offset(cx + sx * 27, size.height * 0.46), 4,
-          Paint()..color = _green.withValues(alpha: 0.3)..style = PaintingStyle.fill);
+          Paint()..color = _accent.withValues(alpha: 0.3)..style = PaintingStyle.fill);
     }
 
     final belt = Rect.fromLTWH(cx - 13, size.height * 0.555, 26, 6);
@@ -834,7 +828,7 @@ class _HeroSpritePainter extends CustomPainter {
     canvas.drawRect(belt, stroke);
     canvas.drawRect(
       Rect.fromCenter(center: Offset(cx, size.height * 0.558), width: 8, height: 6),
-      Paint()..color = _green.withValues(alpha: 0.5)..style = PaintingStyle.fill,
+      Paint()..color = _accent.withValues(alpha: 0.5)..style = PaintingStyle.fill,
     );
 
     for (final side in [-1, 1]) {
@@ -851,7 +845,7 @@ class _HeroSpritePainter extends CustomPainter {
       canvas.drawCircle(
         Offset(cx + sx * (sign == 0 ? -11 : 11), size.height * 0.70),
         4,
-        Paint()..color = _green.withValues(alpha: 0.3)..style = PaintingStyle.fill,
+        Paint()..color = _accent.withValues(alpha: 0.3)..style = PaintingStyle.fill,
       );
     }
 
@@ -874,7 +868,7 @@ class _HeroSpritePainter extends CustomPainter {
     canvas.drawPath(rBoot, stroke);
 
     final eyePaint = Paint()
-      ..color      = _green
+      ..color      = _accent
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
     canvas.drawCircle(Offset(cx - 5, size.height * 0.104), 2.5, eyePaint);
     canvas.drawCircle(Offset(cx + 5, size.height * 0.104), 2.5, eyePaint);

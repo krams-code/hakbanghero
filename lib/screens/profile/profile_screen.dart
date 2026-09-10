@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_colors.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onBackTap;
@@ -17,26 +18,19 @@ class _ProfileScreenState extends State<ProfileScreen>
   Map<String, dynamic>? _userData;
   bool _loading = true;
 
-  static const Color bgDeep   = Color(0xFF060D0A);
-  static const Color bgPanel  = Color(0xFF0D1A12);
-  static const Color bgCard   = Color(0xFF122018);
-  static const Color green    = Color(0xFF00FF6A);
-  static const Color greenDim = Color(0xFF1A4D30);
-  static const Color gold     = Color(0xFFFFD700);
-  static const Color purple   = Color(0xFF9B59FF);
-  static const Color red      = Color(0xFFFF4444);
-  static const Color teal     = Color(0xFF00E5CC);
-  static const Color textMain = Color(0xFFE8F5E9);
-  static const Color textSub  = Color(0xFF6B8C72);
+  static const Color bgDeep   = AppColors.bgDeep;
+  static const Color bgPanel  = AppColors.bgPanel;
+  static const Color bgCard   = AppColors.bgCard;
+  static const Color green    = AppColors.blue;
+  static const Color greenDim = AppColors.borderDim;
+  static const Color gold     = AppColors.gold;
+  static const Color purple   = AppColors.purple;
+  static const Color red      = AppColors.red;
+  static const Color teal     = AppColors.cyan;
+  static const Color textMain = AppColors.textMain;
+  static const Color textSub  = AppColors.textSub;
 
-  static const Map<String, Color> rarityColor = {
-    'Common'    : Color(0xFF9E9E9E),
-    'Uncommon'  : Color(0xFF4CAF50),
-    'Rare'      : Color(0xFF2196F3),
-    'Epic'      : Color(0xFF9C27B0),
-    'Legendary' : Color(0xFFFFD700),
-    'Divine'    : Color(0xFFFF6B35),
-  };
+  static const Map<String, Color> rarityColor = AppColors.rarityColor;
 
   final List<Map<String, dynamic>> _equippedGear = [
     {
@@ -229,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         gradient: LinearGradient(
           begin  : Alignment.topCenter,
           end    : Alignment.bottomCenter,
-          colors : [Color(0xFF0A2010), bgDeep],
+          colors : [AppColors.bgPanel, bgDeep],
         ),
       ),
       padding: const EdgeInsets.fromLTRB(20, 56, 20, 0),
@@ -264,7 +258,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: BoxDecoration(
                     color       : bgCard,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFF4D1515)),
+                    border: Border.all(color: red.withOpacity(0.3)),
                   ),
                   child: const Icon(Icons.logout, color: red, size: 18),
                 ),
@@ -367,8 +361,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A0A3D), Color(0xFF0D1A12)],
+        gradient: LinearGradient(
+          colors: [purple.withValues(alpha: 0.15), bgCard],
         ),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: purple.withValues(alpha: 0.5)),
@@ -684,7 +678,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       'atk'    : ('⚔️ ATK', red),
       'def'    : ('🛡️ DEF', teal),
       'spd'    : ('💨 SPD', green),
-      'hp'     : ('❤️ HP',  Color(0xFFFF6B6B)),
+      'hp'     : ('❤️ HP',  red),
       'stam'   : ('⚡ STAM', gold),
       'xpBonus': ('✨ XP+', purple),
     };
@@ -707,15 +701,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     return chips;
   }
 
-  // ── RECORDS Tab — real Firestore data ────────────────────────────────────
   Widget _buildRecordsTab() {
-    // Pull real values from Firestore, fall back to 0 / defaults
     final longestRunKm  = (_userData?['longest_run_km']   ?? 0.0) as double;
-    final bestPaceSecs  = (_userData?['best_pace_secs']   ?? 0)   as int;   // stored as total seconds per km
+    final bestPaceSecs  = (_userData?['best_pace_secs']   ?? 0)   as int;
     final longestStreak = (_userData?['longest_streak']   ?? 0)   as int;
     final coinsEarned   = (_userData?['coins']            ?? 0)   as int;
 
-    // Format pace as m:ss /km
     String paceLabel = '—';
     if (bestPaceSecs > 0) {
       final m = bestPaceSecs ~/ 60;
@@ -735,7 +726,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       _Record('💰', 'Coins Earned',   coinsLabel,        gold),
     ];
 
-    // Achievement unlock conditions based on real stats
     final totalKm  = (_userData?['total_km']       ?? 0.0) as double;
     final sessions = (_userData?['total_sessions'] ?? 0)   as int;
 
@@ -744,7 +734,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       ('🌟', '5K Hero',     totalKm >= 5.0),
       ('💪', '10K Legend',  totalKm >= 10.0),
       ('🔥', 'Week Streak', longestStreak >= 7),
-      ('👑', 'Gacha King',  false),             // future: track gacha pulls
+      ('👑', 'Gacha King',  false),
       ('⚔️', 'Survivor',    sessions >= 10),
     ];
 
@@ -865,16 +855,16 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, color: const Color(0xFF00FF6A), size: 16),
+        Icon(icon, color: AppColors.blue, size: 16),
         const SizedBox(width: 8),
         Text(label,
             style: const TextStyle(
-                color        : Color(0xFF00FF6A),
+                color        : AppColors.blue,
                 fontSize     : 11,
                 fontWeight   : FontWeight.bold,
                 letterSpacing: 3)),
         const SizedBox(width: 12),
-        Expanded(child: Container(height: 1, color: const Color(0xFF1A4D30))),
+        Expanded(child: Container(height: 1, color: AppColors.borderDim)),
       ],
     );
   }

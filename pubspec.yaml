@@ -23,6 +23,7 @@ dependencies:
   cached_network_image: ^3.4.1
   lottie: ^3.3.1
   fl_chart: ^0.70.2
+  flutter_svg: ^2.0.10        # Layered SVG character avatar rendering
 
   # Local Storage
   shared_preferences: ^2.3.5

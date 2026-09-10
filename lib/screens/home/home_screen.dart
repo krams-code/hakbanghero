@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../run/run_tracking_screen.dart';
 import '../../models/daily_quest_definitions.dart';
+import '../../theme/app_colors.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onProfileTap;
@@ -78,10 +79,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         transitionDuration: const Duration(milliseconds: 400),
       ),
     );
-    // No manual reload needed — StreamBuilder auto-updates when Firestore changes
   }
 
-  // ── Stage name & dungeon text derived from total_km ───────────────────────
   static _StageInfo _stageFromKm(double km) {
     if (km < 5)   return const _StageInfo('1-1', 'THE VERDANT VALE',    'Reach 5 km to unlock next stage');
     if (km < 10)  return const _StageInfo('1-2', 'THE MISTY MARSHES',   'Reach 10 km to unlock next stage');
@@ -103,21 +102,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       return const Scaffold(
-        backgroundColor: Color(0xFF060C06),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF00FF41))),
+        backgroundColor: AppColors.bgDeep,
+        body: Center(child: CircularProgressIndicator(color: AppColors.blue)),
       );
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFF060C06),
-      // ── Single StreamBuilder drives the ENTIRE home screen ────────────────
+      backgroundColor: AppColors.bgDeep,
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
         builder: (context, snapshot) {
-          // Show spinner only on the very first load
           if (!snapshot.hasData) {
             return const Center(
-              child: CircularProgressIndicator(color: Color(0xFF00FF41)),
+              child: CircularProgressIndicator(color: AppColors.blue),
             );
           }
 
@@ -125,7 +122,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ? (snapshot.data!.data() as Map<String, dynamic>)
               : <String, dynamic>{};
 
-          // ── Parse all user fields ─────────────────────────────────────────
           final username = data['username'] as String? ??
               FirebaseAuth.instance.currentUser?.displayName ??
               'Hero';
@@ -138,7 +134,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           final xpProgress = (xp % xpForNext) / xpForNext;
           final stage      = _stageFromKm(totalKm);
 
-          // ── Daily quest progress ──────────────────────────────────────────
           final todayStr   = _todayDateString();
           final storedDate = data['daily_progress_date'] as String? ?? '';
           final dailyKm    = storedDate == todayStr
@@ -189,7 +184,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Top bar ───────────────────────────────────────────────────────────────
   Widget _buildTopBar({required String username, required int level}) {
     return Container(
       padding: EdgeInsets.only(
@@ -199,8 +193,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF0A1A0A),
-            const Color(0xFF060C06).withOpacity(0),
+            AppColors.bgPanel,
+            AppColors.bgDeep.withOpacity(0),
           ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -216,18 +210,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   width: 42, height: 42,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1A4A1A), Color(0xFF0D2A0D)],
+                    gradient: LinearGradient(
+                      colors: [AppColors.borderDim, AppColors.bgCard],
                     ),
-                    border: Border.all(color: const Color(0xFF00FF41), width: 2),
+                    border: Border.all(color: AppColors.blue, width: 2),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF00FF41).withOpacity(0.3),
+                        color: AppColors.blue.withOpacity(0.3),
                         blurRadius: 8,
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.person, color: Color(0xFF00FF41), size: 20),
+                  child: const Icon(Icons.person, color: AppColors.blue, size: 20),
                 ),
                 const SizedBox(width: 10),
                 Column(
@@ -236,7 +230,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     Text(
                       username,
                       style: const TextStyle(
-                        color: Color(0xFFE8FFE8), fontSize: 15,
+                        color: AppColors.textMain, fontSize: 15,
                         fontWeight: FontWeight.w700, letterSpacing: 0.5,
                       ),
                     ),
@@ -245,16 +239,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF00FF41).withOpacity(0.15),
+                            color: AppColors.blue.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(
-                              color: const Color(0xFF00FF41).withOpacity(0.4),
+                              color: AppColors.blue.withOpacity(0.4),
                             ),
                           ),
                           child: Text(
                             'LVL $level',
                             style: const TextStyle(
-                              color: Color(0xFF00FF41), fontSize: 10,
+                              color: AppColors.blue, fontSize: 10,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
@@ -263,7 +257,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         const Text(
                           'HERO',
                           style: TextStyle(
-                            color: Color(0xFF4A8A4A), fontSize: 10, letterSpacing: 1,
+                            color: AppColors.textSub, fontSize: 10, letterSpacing: 1,
                           ),
                         ),
                       ],
@@ -279,7 +273,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── XP bar ────────────────────────────────────────────────────────────────
   Widget _buildXPBar({
     required int xp,
     required int xpForNext,
@@ -296,13 +289,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Text(
                 'EXP  $xp / $xpForNext',
                 style: const TextStyle(
-                  color: Color(0xFF4A8A4A), fontSize: 11, letterSpacing: 0.5,
+                  color: AppColors.textSub, fontSize: 11, letterSpacing: 0.5,
                 ),
               ),
               Text(
                 '${(xpProgress * 100).toStringAsFixed(0)}%',
                 style: const TextStyle(
-                  color: Color(0xFF00FF41), fontSize: 11, fontWeight: FontWeight.w700,
+                  color: AppColors.blue, fontSize: 11, fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -311,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Container(
             height: 6,
             decoration: BoxDecoration(
-              color: const Color(0xFF1A2A1A),
+              color: AppColors.borderDim,
               borderRadius: BorderRadius.circular(3),
             ),
             child: FractionallySizedBox(
@@ -319,13 +312,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               widthFactor: xpProgress.clamp(0.0, 1.0),
               child: Container(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF00FF41), Color(0xFF00CC33)],
+                  gradient: LinearGradient(
+                    colors: [AppColors.blue, AppColors.cyan],
                   ),
                   borderRadius: BorderRadius.circular(3),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF00FF41).withOpacity(0.5),
+                      color: AppColors.blue.withOpacity(0.5),
                       blurRadius: 6,
                     ),
                   ],
@@ -338,7 +331,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Stats row — all live from Firestore ───────────────────────────────────
   Widget _buildStatsRow({
     required double totalKm,
     required int sessions,
@@ -353,7 +345,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             value: totalKm.toStringAsFixed(1),
             unit: 'km',
             icon: Icons.route,
-            color: const Color(0xFF00FF41),
+            color: AppColors.blue,
           ),
           const SizedBox(width: 10),
           _StatCard(
@@ -361,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             value: '$sessions',
             unit: 'runs',
             icon: Icons.flag,
-            color: const Color(0xFF00CFFF),
+            color: AppColors.cyan,
           ),
           const SizedBox(width: 10),
           _StatCard(
@@ -369,14 +361,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             value: stage.id,
             unit: 'stage',
             icon: Icons.castle,
-            color: const Color(0xFFFFD700),
+            color: AppColors.gold,
           ),
         ],
       ),
     );
   }
 
-  // ── Portal / dungeon section ──────────────────────────────────────────────
   Widget _buildPortalSection({required _StageInfo stage}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -388,7 +379,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const Text(
                 'DUNGEON ENTRANCE',
                 style: TextStyle(
-                  color: Color(0xFF4A8A4A), fontSize: 11,
+                  color: AppColors.textSub, fontSize: 11,
                   letterSpacing: 2, fontWeight: FontWeight.w600,
                 ),
               ),
@@ -396,14 +387,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFFD700).withOpacity(0.1),
+                  color: AppColors.gold.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFFFD700).withOpacity(0.3)),
+                  border: Border.all(color: AppColors.gold.withOpacity(0.3)),
                 ),
                 child: Text(
                   'STAGE ${stage.id}',
                   style: const TextStyle(
-                    color: Color(0xFFFFD700), fontSize: 10,
+                    color: AppColors.gold, fontSize: 10,
                     fontWeight: FontWeight.w700, letterSpacing: 1,
                   ),
                 ),
@@ -417,17 +408,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               height: 200,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF1A4A1A), width: 1.5),
+                border: Border.all(color: AppColors.borderDim, width: 1.5),
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
                   Container(
-                    decoration: const BoxDecoration(
+                    decoration: BoxDecoration(
                       gradient: RadialGradient(
                         center: Alignment.center,
                         radius: 0.8,
-                        colors: [Color(0xFF0D2A1A), Color(0xFF060C06)],
+                        colors: [AppColors.bgPanel, AppColors.bgDeep],
                       ),
                     ),
                   ),
@@ -444,7 +435,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               shape: BoxShape.circle,
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF6600CC)
+                                  color: AppColors.purple
                                       .withOpacity(0.15 * _portalGlow.value),
                                   blurRadius: 40, spreadRadius: 20,
                                 ),
@@ -460,7 +451,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: const Color(0xFF6600CC).withOpacity(0.6),
+                                    color: AppColors.purple.withOpacity(0.6),
                                     width: 2,
                                   ),
                                 ),
@@ -475,16 +466,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                               gradient: RadialGradient(
                                 colors: [
                                   Color.lerp(
-                                    const Color(0xFF8800FF),
-                                    const Color(0xFF4400CC),
+                                    AppColors.purple,
+                                    AppColors.blue,
                                     _portalGlow.value,
                                   )!,
-                                  const Color(0xFF1A0033),
+                                  AppColors.bgDeep,
                                 ],
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF8800FF)
+                                  color: AppColors.purple
                                       .withOpacity(0.5 * _portalGlow.value),
                                   blurRadius: 20, spreadRadius: 5,
                                 ),
@@ -509,7 +500,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           stage.name,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            color: Color(0xFFCC88FF), fontSize: 12,
+                            color: AppColors.purple, fontSize: 12,
                             fontWeight: FontWeight.w700, letterSpacing: 2,
                           ),
                         ),
@@ -518,7 +509,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                           stage.hint,
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            color: Color(0xFF4A8A4A), fontSize: 10,
+                            color: AppColors.textSub, fontSize: 10,
                           ),
                         ),
                       ],
@@ -555,15 +546,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               child: Ink(
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF00FF41), Color(0xFF00BB30)],
+                  gradient: LinearGradient(
+                    colors: [AppColors.blue, AppColors.cyan],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF00FF41).withOpacity(0.35),
+                      color: AppColors.blue.withOpacity(0.35),
                       blurRadius: 16, offset: const Offset(0, 4),
                     ),
                   ],
@@ -573,12 +564,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.directions_run, color: Color(0xFF0A0F0A), size: 22),
+                      Icon(Icons.directions_run, color: Colors.white, size: 22),
                       SizedBox(width: 10),
                       Text(
                         'START RUN',
                         style: TextStyle(
-                          color: Color(0xFF0A0F0A), fontSize: 16,
+                          color: Colors.white, fontSize: 16,
                           fontWeight: FontWeight.w900, letterSpacing: 3,
                         ),
                       ),
@@ -593,7 +584,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Active quests — driven by the parent StreamBuilder ────────────────────
   Widget _buildActiveQuests({
     required double dailyKm,
     required Map<String, dynamic> claimedMap,
@@ -608,7 +598,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               const Text(
                 'ACTIVE QUESTS',
                 style: TextStyle(
-                  color: Color(0xFF4A8A4A), fontSize: 11,
+                  color: AppColors.textSub, fontSize: 11,
                   letterSpacing: 2, fontWeight: FontWeight.w600,
                 ),
               ),
@@ -616,14 +606,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF6B35).withOpacity(0.1),
+                  color: AppColors.orange.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFFFF6B35).withOpacity(0.4)),
+                  border: Border.all(color: AppColors.orange.withOpacity(0.4)),
                 ),
                 child: Text(
                   '${kDailyQuests.length} ACTIVE',
                   style: const TextStyle(
-                    color: Color(0xFFFF6B35), fontSize: 9,
+                    color: AppColors.orange, fontSize: 9,
                     fontWeight: FontWeight.w700, letterSpacing: 1,
                   ),
                 ),
@@ -646,7 +636,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Recent activity ───────────────────────────────────────────────────────
   Widget _buildRecentActivity({required String uid, required int sessions}) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
@@ -656,7 +645,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           const Text(
             'RECENT ACTIVITY',
             style: TextStyle(
-              color: Color(0xFF4A8A4A), fontSize: 11,
+              color: AppColors.textSub, fontSize: 11,
               letterSpacing: 2, fontWeight: FontWeight.w600,
             ),
           ),
@@ -665,18 +654,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: const Color(0xFF0D1A0D),
+                color: AppColors.bgCard,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF1A3A1A)),
+                border: Border.all(color: AppColors.borderDim),
               ),
               child: const Center(
                 child: Column(
                   children: [
-                    Icon(Icons.directions_run, color: Color(0xFF2A4A2A), size: 32),
+                    Icon(Icons.directions_run, color: AppColors.borderDim, size: 32),
                     SizedBox(height: 8),
                     Text(
                       'No runs yet — start your first session!',
-                      style: TextStyle(color: Color(0xFF3A6A3A), fontSize: 13),
+                      style: TextStyle(color: AppColors.textSub, fontSize: 13),
                     ),
                   ],
                 ),
@@ -690,7 +679,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 }
 
-// ─── Stage info model ─────────────────────────────────────────────────────────
 class _StageInfo {
   final String id;
   final String name;
@@ -698,9 +686,6 @@ class _StageInfo {
   const _StageInfo(this.id, this.name, this.hint);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Quest card
-// ─────────────────────────────────────────────────────────────────────────────
 class _QuestCard extends StatelessWidget {
   final DailyQuest quest;
   final double progress;
@@ -715,10 +700,10 @@ class _QuestCard extends StatelessWidget {
   });
 
   Color get _progressColor {
-    if (claimed) return const Color(0xFF4A8A4A);
-    if (progress >= 1.0) return const Color(0xFF00FF41);
-    if (progress >= 0.5) return const Color(0xFFFFD700);
-    return const Color(0xFFFF6B35);
+    if (claimed) return AppColors.textSub;
+    if (progress >= 1.0) return AppColors.blue;
+    if (progress >= 0.5) return AppColors.gold;
+    return AppColors.orange;
   }
 
   @override
@@ -730,11 +715,11 @@ class _QuestCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A0D),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: claimed
-              ? const Color(0xFF2A4A2A)
+              ? AppColors.borderDim
               : _progressColor.withOpacity(0.3),
         ),
       ),
@@ -750,7 +735,7 @@ class _QuestCard extends StatelessWidget {
               ),
             ),
             child: claimed
-                ? const Icon(Icons.check, color: Color(0xFF4A8A4A), size: 18)
+                ? const Icon(Icons.check, color: AppColors.textSub, size: 18)
                 : Icon(quest.icon, color: _progressColor, size: 18),
           ),
           const SizedBox(width: 12),
@@ -764,8 +749,8 @@ class _QuestCard extends StatelessWidget {
                       quest.title,
                       style: TextStyle(
                         color: claimed
-                            ? const Color(0xFF4A6A4A)
-                            : const Color(0xFFD0EED0),
+                            ? AppColors.textSub
+                            : AppColors.textMain,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -775,8 +760,8 @@ class _QuestCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: claimed
-                            ? const Color(0xFF1A2A1A)
-                            : const Color(0xFF00CFFF).withOpacity(0.1),
+                            ? AppColors.borderDim
+                            : AppColors.cyan.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(5),
                       ),
                       child: Text(
@@ -785,8 +770,8 @@ class _QuestCard extends StatelessWidget {
                             : '+${quest.crystalReward} 💎',
                         style: TextStyle(
                           color: claimed
-                              ? const Color(0xFF3A6A3A)
-                              : const Color(0xFF00CFFF),
+                              ? AppColors.textSub
+                              : AppColors.cyan,
                           fontSize: 9,
                           fontWeight: FontWeight.w700,
                         ),
@@ -799,8 +784,8 @@ class _QuestCard extends StatelessWidget {
                   claimed ? 'Completed today!' : quest.description,
                   style: TextStyle(
                     color: claimed
-                        ? const Color(0xFF3A6A3A)
-                        : const Color(0xFF4A7A4A),
+                        ? AppColors.textSub.withOpacity(0.7)
+                        : AppColors.textSub,
                     fontSize: 11,
                   ),
                 ),
@@ -822,7 +807,7 @@ class _QuestCard extends StatelessWidget {
                     Container(
                       height: 4,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1A2A1A),
+                        color: AppColors.borderDim,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -855,9 +840,6 @@ class _QuestCard extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Recent activity list
-// ─────────────────────────────────────────────────────────────────────────────
 class _RecentActivityList extends StatelessWidget {
   final String uid;
   const _RecentActivityList({required this.uid});
@@ -877,13 +859,13 @@ class _RecentActivityList extends StatelessWidget {
           return Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF0D1A0D),
+              color: AppColors.bgCard,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF1A3A1A)),
+              border: Border.all(color: AppColors.borderDim),
             ),
             child: const Text(
               'Activity history coming soon',
-              style: TextStyle(color: Color(0xFF4A8A4A), fontSize: 13),
+              style: TextStyle(color: AppColors.textSub, fontSize: 13),
             ),
           );
         }
@@ -896,7 +878,7 @@ class _RecentActivityList extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFF0D1A0D),
+                color: AppColors.bgCard,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: color.withOpacity(0.2)),
               ),
@@ -917,7 +899,7 @@ class _RecentActivityList extends StatelessWidget {
                         Text(
                           '${(s['distanceKm'] as double).toStringAsFixed(2)} km  •  ${s['duration']}',
                           style: const TextStyle(
-                              color: Color(0xFF4A7A4A), fontSize: 11),
+                              color: AppColors.textSub, fontSize: 11),
                         ),
                       ],
                     ),
@@ -925,7 +907,7 @@ class _RecentActivityList extends StatelessWidget {
                   Text(
                     '+${s['xp']} XP',
                     style: const TextStyle(
-                        color: Color(0xFFFFD700), fontSize: 11, fontWeight: FontWeight.w700),
+                        color: AppColors.gold, fontSize: 11, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
@@ -949,9 +931,9 @@ class _RecentActivityList extends StatelessWidget {
 
   Color _colorForType(String type) {
     switch (type) {
-      case 'walk': return const Color(0xFF00CFFF);
-      case 'jog':  return const Color(0xFFFFD700);
-      default:     return const Color(0xFF00FF41);
+      case 'walk': return AppColors.cyan;
+      case 'jog':  return AppColors.gold;
+      default:     return AppColors.blue;
     }
   }
 
@@ -963,8 +945,6 @@ class _RecentActivityList extends StatelessWidget {
     }
   }
 }
-
-// ─── Sub-widgets ──────────────────────────────────────────────────────────────
 
 class _StatCard extends StatelessWidget {
   final String label;
@@ -987,7 +967,7 @@ class _StatCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D1A0D),
+          color: AppColors.bgCard,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withOpacity(0.2)),
         ),
@@ -1000,11 +980,11 @@ class _StatCard extends StatelessWidget {
                 style: TextStyle(
                     color: color, fontSize: 18, fontWeight: FontWeight.w800)),
             Text(unit,
-                style: const TextStyle(color: Color(0xFF3A5A3A), fontSize: 10)),
+                style: const TextStyle(color: AppColors.textSub, fontSize: 10)),
             const SizedBox(height: 2),
             Text(label,
                 style: const TextStyle(
-                    color: Color(0xFF3A6A3A), fontSize: 9, letterSpacing: 0.5)),
+                    color: AppColors.textSub, fontSize: 9, letterSpacing: 0.5)),
           ],
         ),
       ),
@@ -1012,13 +992,11 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// ─── Custom painters ──────────────────────────────────────────────────────────
-
 class _GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF1A3A1A).withOpacity(0.3)
+      ..color = AppColors.borderDim.withOpacity(0.3)
       ..strokeWidth = 0.5;
     for (double x = 0; x < size.width; x += 32) {
       canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
@@ -1036,7 +1014,7 @@ class _DashedCirclePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFF8800FF).withOpacity(0.5)
+      ..color = AppColors.purple.withOpacity(0.5)
       ..strokeWidth = 1.5
       ..style = PaintingStyle.stroke;
 

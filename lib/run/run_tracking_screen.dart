@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/activity_model.dart';
 import '../../models/daily_quest_definitions.dart';
+import '../theme/app_colors.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Pre-run: user picks activity type, then tracking begins
@@ -83,9 +84,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
   Color get _activityColor {
     switch (_effectiveType) {
-      case ActivityType.walk: return const Color(0xFF00CFFF);
-      case ActivityType.jog:  return const Color(0xFFFFD700);
-      case ActivityType.run:  return const Color(0xFF00FF41);
+      case ActivityType.walk: return AppColors.cyan;
+      case ActivityType.jog:  return AppColors.gold;
+      case ActivityType.run:  return AppColors.blue;
     }
   }
 
@@ -350,7 +351,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: const Color(0xFF1A3A1A)),
+      SnackBar(content: Text(msg), backgroundColor: AppColors.borderDim),
     );
   }
 
@@ -358,7 +359,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF060C06),
+      backgroundColor: AppColors.bgDeep,
       body: FadeTransition(
         opacity: _fade,
         child: _phase == _Phase.preRun ? _buildPreRun() : _buildTracking(),
@@ -380,18 +381,18 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1A2A1A),
+                      color: AppColors.bgCard,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFF2A4A2A)),
+                      border: Border.all(color: AppColors.borderDim),
                     ),
-                    child: const Icon(Icons.arrow_back, color: Color(0xFF00FF41), size: 20),
+                    child: const Icon(Icons.arrow_back, color: AppColors.blue, size: 20),
                   ),
                 ),
                 const SizedBox(width: 12),
                 const Text(
                   'START SESSION',
                   style: TextStyle(
-                    color: Color(0xFFE8FFE8),
+                    color: AppColors.textMain,
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 2,
@@ -408,26 +409,26 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               height: 120,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: const RadialGradient(
-                  colors: [Color(0xFF1A4A1A), Color(0xFF060C06)],
+                gradient: RadialGradient(
+                  colors: [AppColors.borderDim, AppColors.bgDeep],
                 ),
-                border: Border.all(color: const Color(0xFF00FF41), width: 2),
+                border: Border.all(color: AppColors.blue, width: 2),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF00FF41).withOpacity(0.3),
+                    color: AppColors.blue.withOpacity(0.3),
                     blurRadius: 30,
                     spreadRadius: 5,
                   ),
                 ],
               ),
-              child: const Icon(Icons.directions_run, color: Color(0xFF00FF41), size: 52),
+              child: const Icon(Icons.directions_run, color: AppColors.blue, size: 52),
             ),
           ),
           const SizedBox(height: 32),
           const Text(
             'SELECT ACTIVITY',
             style: TextStyle(
-              color: Color(0xFF4A8A4A),
+              color: AppColors.textSub,
               fontSize: 12,
               letterSpacing: 3,
               fontWeight: FontWeight.w600,
@@ -452,17 +453,17 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
             child: Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFF0D1A0D),
+                color: AppColors.bgCard,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF1A3A1A)),
+                border: Border.all(color: AppColors.borderDim),
               ),
-              child: Column(
-                children: const [
-                  _SpeedInfo(label: '🚶 Walk', range: '< 6 km/h',    color: Color(0xFF00CFFF)),
+              child: const Column(
+                children: [
+                  _SpeedInfo(label: '🚶 Walk', range: '< 6 km/h',    color: AppColors.cyan),
                   SizedBox(height: 6),
-                  _SpeedInfo(label: '🏃 Jog',  range: '6 – 10 km/h', color: Color(0xFFFFD700)),
+                  _SpeedInfo(label: '🏃 Jog',  range: '6 – 10 km/h', color: AppColors.gold),
                   SizedBox(height: 6),
-                  _SpeedInfo(label: '⚡ Run',  range: '> 10 km/h',   color: Color(0xFF00FF41)),
+                  _SpeedInfo(label: '⚡ Run',  range: '> 10 km/h',   color: AppColors.blue),
                 ],
               ),
             ),
@@ -473,7 +474,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
             child: Text(
               'Your selection will be confirmed by GPS speed during the session.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: const Color(0xFF3A6A3A), fontSize: 11),
+              style: TextStyle(color: AppColors.textSub, fontSize: 11),
             ),
           ),
           const Spacer(),
@@ -490,8 +491,8 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                 ),
                 child: Ink(
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF00FF41), Color(0xFF00BB30)],
+                    gradient: LinearGradient(
+                      colors: [AppColors.blue, AppColors.cyan],
                     ),
                     borderRadius: BorderRadius.circular(18),
                   ),
@@ -500,12 +501,12 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.play_arrow, color: Color(0xFF0A0F0A), size: 26),
+                        const Icon(Icons.play_arrow, color: Colors.white, size: 26),
                         const SizedBox(width: 8),
                         Text(
                           'BEGIN ${_userPick.label.toUpperCase()}',
                           style: const TextStyle(
-                            color: Color(0xFF0A0F0A),
+                            color: Colors.white,
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 2,
@@ -560,14 +561,14 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF6B35).withOpacity(0.15),
+                      color: AppColors.orange.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFF6B35).withOpacity(0.4)),
+                      border: Border.all(color: AppColors.orange.withOpacity(0.4)),
                     ),
                     child: const Text(
                       '⏸ PAUSED',
                       style: TextStyle(
-                        color: Color(0xFFFF6B35),
+                        color: AppColors.orange,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1,
@@ -581,7 +582,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
           Text(
             _formattedTime,
             style: const TextStyle(
-              color: Color(0xFFE8FFE8),
+              color: AppColors.textMain,
               fontSize: 64,
               fontWeight: FontWeight.w200,
               letterSpacing: 4,
@@ -591,7 +592,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
           const SizedBox(height: 8),
           const Text(
             'ELAPSED TIME',
-            style: TextStyle(color: Color(0xFF3A5A3A), fontSize: 10, letterSpacing: 3),
+            style: TextStyle(color: AppColors.textSub, fontSize: 10, letterSpacing: 3),
           ),
           const SizedBox(height: 32),
           AnimatedBuilder(
@@ -617,13 +618,13 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                   label: 'AVG PACE',
                   value: _pace,
                   unit: '/km',
-                  color: const Color(0xFFFFD700),
+                  color: AppColors.gold,
                 ),
                 _TrackStat(
                   label: 'MAX SPEED',
                   value: _maxSpeedKmh.toStringAsFixed(1),
                   unit: 'km/h',
-                  color: const Color(0xFFFF6B35),
+                  color: AppColors.orange,
                 ),
               ],
             ),
@@ -639,13 +640,13 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                     child: Container(
                       height: 60,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF0D1A0D),
+                        color: AppColors.bgCard,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF1A3A1A)),
+                        border: Border.all(color: AppColors.borderDim),
                       ),
                       child: Icon(
                         _isPaused ? Icons.play_arrow : Icons.pause,
-                        color: _isPaused ? const Color(0xFF00FF41) : const Color(0xFFFFD700),
+                        color: _isPaused ? AppColors.blue : AppColors.gold,
                         size: 30,
                       ),
                     ),
@@ -659,13 +660,13 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                     child: Container(
                       height: 60,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFCC2200), Color(0xFF881100)],
+                        gradient: LinearGradient(
+                          colors: [AppColors.red, AppColors.red.withOpacity(0.7)],
                         ),
                         borderRadius: BorderRadius.circular(16),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFFCC2200).withOpacity(0.3),
+                            color: AppColors.red.withOpacity(0.3),
                             blurRadius: 12,
                           ),
                         ],
@@ -701,15 +702,15 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1A0D),
+        backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFF1A4A1A)),
+          side: const BorderSide(color: AppColors.borderDim),
         ),
         title: const Text(
           'FINISH SESSION?',
           style: TextStyle(
-            color: Color(0xFFE8FFE8),
+            color: AppColors.textMain,
             fontSize: 15,
             fontWeight: FontWeight.w800,
             letterSpacing: 1,
@@ -717,19 +718,19 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         ),
         content: Text(
           'You\'ve covered ${_distanceKm.toStringAsFixed(2)} km in $_formattedTime. Save and end?',
-          style: const TextStyle(color: Color(0xFF4A8A4A), fontSize: 13),
+          style: const TextStyle(color: AppColors.textSub, fontSize: 13),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('KEEP GOING', style: TextStyle(color: Color(0xFF00FF41))),
+            child: const Text('KEEP GOING', style: TextStyle(color: AppColors.blue)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _stopAndSave();
             },
-            child: const Text('FINISH', style: TextStyle(color: Color(0xFFCC2200))),
+            child: const Text('FINISH', style: TextStyle(color: AppColors.red)),
           ),
         ],
       ),
@@ -866,9 +867,9 @@ class _ActivityTypeButton extends StatelessWidget {
 
   Color get _color {
     switch (type) {
-      case ActivityType.walk: return const Color(0xFF00CFFF);
-      case ActivityType.jog:  return const Color(0xFFFFD700);
-      case ActivityType.run:  return const Color(0xFF00FF41);
+      case ActivityType.walk: return AppColors.cyan;
+      case ActivityType.jog:  return AppColors.gold;
+      case ActivityType.run:  return AppColors.blue;
     }
   }
 
@@ -882,10 +883,10 @@ class _ActivityTypeButton extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 4),
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: isSelected ? _color.withOpacity(0.15) : const Color(0xFF0D1A0D),
+            color: isSelected ? _color.withOpacity(0.15) : AppColors.bgCard,
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: isSelected ? _color : const Color(0xFF1A3A1A),
+              color: isSelected ? _color : AppColors.borderDim,
               width: isSelected ? 2 : 1,
             ),
             boxShadow: isSelected
@@ -899,7 +900,7 @@ class _ActivityTypeButton extends StatelessWidget {
               Text(
                 type.label.toUpperCase(),
                 style: TextStyle(
-                  color: isSelected ? _color : const Color(0xFF3A5A3A),
+                  color: isSelected ? _color : AppColors.textSub,
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1,
@@ -936,7 +937,7 @@ class _TrackStat extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D1A0D),
+          color: AppColors.bgCard,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withOpacity(0.2)),
         ),
@@ -944,11 +945,11 @@ class _TrackStat extends StatelessWidget {
           children: [
             Text(value,
                 style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w700)),
-            Text(unit, style: const TextStyle(color: Color(0xFF3A5A3A), fontSize: 9)),
+            Text(unit, style: const TextStyle(color: AppColors.textSub, fontSize: 9)),
             const SizedBox(height: 2),
             Text(label,
                 style: const TextStyle(
-                    color: Color(0xFF3A6A3A), fontSize: 8, letterSpacing: 0.5)),
+                    color: AppColors.textSub, fontSize: 8, letterSpacing: 0.5)),
           ],
         ),
       ),
@@ -973,7 +974,7 @@ class _SpeedInfo extends StatelessWidget {
         Text(label,
             style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
         const Spacer(),
-        Text(range, style: const TextStyle(color: Color(0xFF4A7A4A), fontSize: 12)),
+        Text(range, style: const TextStyle(color: AppColors.textSub, fontSize: 12)),
       ],
     );
   }
@@ -997,9 +998,9 @@ class _SummarySheet extends StatelessWidget {
 
   Color get _typeColor {
     switch (session.type) {
-      case ActivityType.walk: return const Color(0xFF00CFFF);
-      case ActivityType.jog:  return const Color(0xFFFFD700);
-      case ActivityType.run:  return const Color(0xFF00FF41);
+      case ActivityType.walk: return AppColors.cyan;
+      case ActivityType.jog:  return AppColors.gold;
+      case ActivityType.run:  return AppColors.blue;
     }
   }
 
@@ -1011,7 +1012,7 @@ class _SummarySheet extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
       decoration: const BoxDecoration(
-        color: Color(0xFF0D1A0D),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: SingleChildScrollView(
@@ -1022,7 +1023,7 @@ class _SummarySheet extends StatelessWidget {
             Container(
               width: 40, height: 4,
               decoration: BoxDecoration(
-                color: const Color(0xFF2A4A2A),
+                color: AppColors.borderDim,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -1051,7 +1052,7 @@ class _SummarySheet extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               '${session.type.label} • ${session.formattedDuration}',
-              style: const TextStyle(color: Color(0xFF4A8A4A), fontSize: 13),
+              style: const TextStyle(color: AppColors.textSub, fontSize: 13),
             ),
             const SizedBox(height: 24),
 
@@ -1066,7 +1067,7 @@ class _SummarySheet extends StatelessWidget {
                 _SummaryStat(
                   label: 'AVG PACE',
                   value: session.formattedPace,
-                  color: const Color(0xFFFFD700),
+                  color: AppColors.gold,
                 ),
               ],
             ),
@@ -1076,12 +1077,12 @@ class _SummarySheet extends StatelessWidget {
                 _SummaryStat(
                   label: 'MAX SPEED',
                   value: '${session.maxSpeedKmh.toStringAsFixed(1)} km/h',
-                  color: const Color(0xFFFF6B35),
+                  color: AppColors.orange,
                 ),
                 _SummaryStat(
                   label: 'AVG SPEED',
                   value: '${session.avgSpeedKmh.toStringAsFixed(1)} km/h',
-                  color: const Color(0xFF00CFFF),
+                  color: AppColors.cyan,
                 ),
               ],
             ),
@@ -1091,24 +1092,24 @@ class _SummarySheet extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFF0A1A0A),
+                color: AppColors.bgPanel,
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFF1A4A1A)),
+                border: Border.all(color: AppColors.borderDim),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.star, color: Color(0xFFFFD700), size: 16),
+                  const Icon(Icons.star, color: AppColors.gold, size: 16),
                   const SizedBox(width: 6),
                   Text('+${session.xpEarned} XP',
                       style: const TextStyle(
-                          color: Color(0xFFFFD700), fontSize: 14, fontWeight: FontWeight.w700)),
+                          color: AppColors.gold, fontSize: 14, fontWeight: FontWeight.w700)),
                   const SizedBox(width: 20),
-                  const Icon(Icons.monetization_on, color: Color(0xFFFFD700), size: 16),
+                  const Icon(Icons.monetization_on, color: AppColors.gold, size: 16),
                   const SizedBox(width: 6),
                   Text('+${session.coinsEarned} coins',
                       style: const TextStyle(
-                          color: Color(0xFFFFD700), fontSize: 14, fontWeight: FontWeight.w700)),
+                          color: AppColors.gold, fontSize: 14, fontWeight: FontWeight.w700)),
                 ],
               ),
             ),
@@ -1119,12 +1120,12 @@ class _SummarySheet extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0A0D1A),
+                  color: AppColors.bgPanel,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF00CFFF).withOpacity(0.5)),
+                  border: Border.all(color: AppColors.cyan.withOpacity(0.5)),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF00CFFF).withOpacity(0.1),
+                      color: AppColors.cyan.withOpacity(0.1),
                       blurRadius: 12,
                     ),
                   ],
@@ -1139,7 +1140,7 @@ class _SummarySheet extends StatelessWidget {
                         Text(
                           'QUEST${completedQuests.length > 1 ? 'S' : ''} COMPLETED!',
                           style: const TextStyle(
-                            color: Color(0xFF00CFFF),
+                            color: AppColors.cyan,
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 1.5,
@@ -1166,7 +1167,7 @@ class _SummarySheet extends StatelessWidget {
                               Text(
                                 '+${q.crystalReward} 💎',
                                 style: const TextStyle(
-                                  color: Color(0xFF00CFFF),
+                                  color: AppColors.cyan,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -1175,14 +1176,14 @@ class _SummarySheet extends StatelessWidget {
                           ),
                         )),
                     if (completedQuests.length > 1) ...[
-                      const Divider(color: Color(0xFF1A2A3A), height: 16),
+                      const Divider(color: AppColors.borderDim, height: 16),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
                           Text(
                             'Total: +$totalCrystals 💎 Mana Crystals',
                             style: const TextStyle(
-                              color: Color(0xFF00CFFF),
+                              color: AppColors.cyan,
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
                             ),
@@ -1200,14 +1201,14 @@ class _SummarySheet extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A0A),
+                  color: AppColors.gold.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF3A3A1A)),
+                  border: Border.all(color: AppColors.gold.withOpacity(0.3)),
                 ),
                 child: Text(
                   '⚡ You selected ${session.userPick.label} but GPS confirmed ${session.type.label}!',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Color(0xFFCCCC44), fontSize: 11),
+                  style: const TextStyle(color: AppColors.gold, fontSize: 11),
                 ),
               ),
             ],
@@ -1230,7 +1231,7 @@ class _SummarySheet extends StatelessWidget {
                     : const Text(
                         'DONE',
                         style: TextStyle(
-                          color: Color(0xFF0A0F0A),
+                          color: Colors.black,
                           fontSize: 16,
                           fontWeight: FontWeight.w900,
                           letterSpacing: 2,
@@ -1259,7 +1260,7 @@ class _SummaryStat extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 4),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF0A1A0A),
+          color: AppColors.bgPanel,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withOpacity(0.2)),
         ),
@@ -1270,7 +1271,7 @@ class _SummaryStat extends StatelessWidget {
             const SizedBox(height: 2),
             Text(label,
                 style: const TextStyle(
-                    color: Color(0xFF3A5A3A), fontSize: 9, letterSpacing: 0.5)),
+                    color: AppColors.textSub, fontSize: 9, letterSpacing: 0.5)),
           ],
         ),
       ),

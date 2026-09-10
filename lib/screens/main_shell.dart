@@ -5,6 +5,8 @@ import 'leaderboard/leaderboard_screen.dart';
 import 'profile/profile_screen.dart';
 import 'package:hakbanghero/screens/character/equipment_screen.dart';
 import 'package:hakbanghero/screens/gacha/gacha_screen.dart';
+import '../theme/app_colors.dart';
+import 'bosses/boss_map_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -18,24 +20,46 @@ class _MainShellState extends State<MainShell> {
 
   void _navigateTo(int index) => setState(() => _currentIndex = index);
 
-  // Use a getter so _navigateTo is accessible when building the list
   List<Widget> get _screens => [
-    const GachaScreen(),                                        // 0 — Gacha
-    const EquipmentScreen(),                                    // 1 — Gear
-    HomeScreen(onProfileTap: () => _navigateTo(5)),            // 2 — Run (center)
-    const LeaderboardScreen(),                                  // 3 — Ranks
-    const ActivityScreen(),                                     // 4 — Activity
-    ProfileScreen(onBackTap: () => _navigateTo(2)),            // 5 — Profile
+    const GachaScreen(),
+    const EquipmentScreen(),
+    HomeScreen(onProfileTap: () => _navigateTo(5)),
+    const LeaderboardScreen(),
+    const ActivityScreen(),
+    ProfileScreen(onBackTap: () => _navigateTo(2)),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0F0A),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
+      backgroundColor: AppColors.bgDeep,
+      body: Stack(
+  children: [
+    IndexedStack(
+      index: _currentIndex,
+      children: _screens,
+    ),
+    Positioned(
+      right: 12,
+      bottom: 90, // sits above the bottom nav bar
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const BossMapScreen()),
+        ),
+        child: Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(colors: [AppColors.gold, AppColors.orange]),
+            boxShadow: [BoxShadow(color: AppColors.gold.withOpacity(0.4), blurRadius: 12)],
+          ),
+          child: const Icon(Icons.map, color: Colors.black, size: 26),
+        ),
       ),
+    ),
+  ],
+),
       bottomNavigationBar: _HakbangBottomNav(
         currentIndex: _currentIndex == 5 ? -1 : _currentIndex,
         onTap: _navigateTo,
@@ -44,7 +68,6 @@ class _MainShellState extends State<MainShell> {
   }
 }
 
-// ── Bottom Navigation Bar — 5 items (no Profile) ─────────────────────────────
 class _HakbangBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -66,13 +89,13 @@ class _HakbangBottomNav extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A0D),
+        color: AppColors.bgPanel,
         border: const Border(
-          top: BorderSide(color: Color(0xFF1A4A1A), width: 1),
+          top: BorderSide(color: AppColors.borderDim, width: 1),
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF00FF41).withValues(alpha: 0.08),
+            color: AppColors.blue.withOpacity(0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -96,14 +119,8 @@ class _HakbangBottomNav extends StatelessWidget {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: isSelected
-                              ? [
-                                  const Color(0xFF00FF41),
-                                  const Color(0xFF00CC33),
-                                ]
-                              : [
-                                  const Color(0xFF1A4A1A),
-                                  const Color(0xFF0D2A0D),
-                                ],
+                              ? [AppColors.blue, AppColors.cyan]
+                              : [AppColors.borderDim, AppColors.bgCard],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -111,8 +128,7 @@ class _HakbangBottomNav extends StatelessWidget {
                         boxShadow: isSelected
                             ? [
                                 BoxShadow(
-                                  color: const Color(0xFF00FF41)
-                                      .withValues(alpha: 0.4),
+                                  color: AppColors.blue.withOpacity(0.4),
                                   blurRadius: 12,
                                   spreadRadius: 2,
                                 ),
@@ -125,8 +141,8 @@ class _HakbangBottomNav extends StatelessWidget {
                           Icon(
                             item.icon,
                             color: isSelected
-                                ? const Color(0xFF0A0F0A)
-                                : const Color(0xFF4A8A4A),
+                                ? Colors.white
+                                : AppColors.textSub,
                             size: 22,
                           ),
                           const SizedBox(height: 2),
@@ -136,8 +152,8 @@ class _HakbangBottomNav extends StatelessWidget {
                               fontSize: 9,
                               fontWeight: FontWeight.w700,
                               color: isSelected
-                                  ? const Color(0xFF0A0F0A)
-                                  : const Color(0xFF4A8A4A),
+                                  ? Colors.white
+                                  : AppColors.textSub,
                               letterSpacing: 0.5,
                             ),
                           ),
@@ -157,8 +173,8 @@ class _HakbangBottomNav extends StatelessWidget {
                       Icon(
                         item.icon,
                         color: isSelected
-                            ? const Color(0xFF00FF41)
-                            : const Color(0xFF3A5A3A),
+                            ? AppColors.blue
+                            : AppColors.textSub,
                         size: 20,
                       ),
                       const SizedBox(height: 3),
@@ -170,8 +186,8 @@ class _HakbangBottomNav extends StatelessWidget {
                               ? FontWeight.w700
                               : FontWeight.w500,
                           color: isSelected
-                              ? const Color(0xFF00FF41)
-                              : const Color(0xFF3A5A3A),
+                              ? AppColors.blue
+                              : AppColors.textSub,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -181,7 +197,7 @@ class _HakbangBottomNav extends StatelessWidget {
                           width: 4,
                           height: 4,
                           decoration: const BoxDecoration(
-                            color: Color(0xFF00FF41),
+                            color: AppColors.blue,
                             shape: BoxShape.circle,
                           ),
                         ),

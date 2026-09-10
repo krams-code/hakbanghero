@@ -3,10 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../models/activity_model.dart';
+import '../../theme/app_colors.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Activity Screen — replaces StagesScreen
-// ─────────────────────────────────────────────────────────────────────────────
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
 
@@ -20,7 +18,7 @@ class _ActivityScreenState extends State<ActivityScreen>
   late Animation<double> _entryFade;
   late Animation<Offset> _entrySlide;
 
-  ActivityType? _filterType; // null = all
+  ActivityType? _filterType;
 
   @override
   void initState() {
@@ -46,7 +44,7 @@ class _ActivityScreenState extends State<ActivityScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF060C06),
+      backgroundColor: AppColors.bgDeep,
       body: FadeTransition(
         opacity: _entryFade,
         child: SlideTransition(
@@ -76,8 +74,8 @@ class _ActivityScreenState extends State<ActivityScreen>
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF0A1A0A),
-            const Color(0xFF060C06).withOpacity(0),
+            AppColors.bgPanel,
+            AppColors.bgDeep.withOpacity(0),
           ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -85,12 +83,12 @@ class _ActivityScreenState extends State<ActivityScreen>
       ),
       child: Row(
         children: [
-          const Icon(Icons.bolt, color: Color(0xFF00FF41), size: 22),
+          const Icon(Icons.bolt, color: AppColors.blue, size: 22),
           const SizedBox(width: 10),
           const Text(
             'ACTIVITY LOG',
             style: TextStyle(
-              color: Color(0xFFE8FFE8),
+              color: AppColors.textMain,
               fontSize: 20,
               fontWeight: FontWeight.w900,
               letterSpacing: 2,
@@ -100,14 +98,14 @@ class _ActivityScreenState extends State<ActivityScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF00FF41).withOpacity(0.1),
+              color: AppColors.blue.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFF00FF41).withOpacity(0.3)),
+              border: Border.all(color: AppColors.blue.withOpacity(0.3)),
             ),
             child: const Text(
               'ALL TIME',
               style: TextStyle(
-                color: Color(0xFF00FF41),
+                color: AppColors.blue,
                 fontSize: 9,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1,
@@ -128,7 +126,7 @@ class _ActivityScreenState extends State<ActivityScreen>
           children: [
             _FilterChip(
               label: 'ALL',
-              color: const Color(0xFF4A8A4A),
+              color: AppColors.textSub,
               isSelected: _filterType == null,
               onTap: () => setState(() => _filterType = null),
             ),
@@ -136,9 +134,9 @@ class _ActivityScreenState extends State<ActivityScreen>
             ...ActivityType.values.map((t) {
               Color c;
               switch (t) {
-                case ActivityType.walk: c = const Color(0xFF00CFFF); break;
-                case ActivityType.jog:  c = const Color(0xFFFFD700); break;
-                case ActivityType.run:  c = const Color(0xFF00FF41); break;
+                case ActivityType.walk: c = AppColors.cyan; break;
+                case ActivityType.jog:  c = AppColors.gold; break;
+                case ActivityType.run:  c = AppColors.blue; break;
               }
               return Padding(
                 padding: const EdgeInsets.only(right: 8),
@@ -200,7 +198,7 @@ class _ActivityScreenState extends State<ActivityScreen>
                     label: 'TOTAL KM',
                     value: totalKm.toStringAsFixed(1),
                     unit: 'km',
-                    color: const Color(0xFF00FF41),
+                    color: AppColors.blue,
                     icon: Icons.route,
                   ),
                   const SizedBox(width: 10),
@@ -208,7 +206,7 @@ class _ActivityScreenState extends State<ActivityScreen>
                     label: 'ACTIVE TIME',
                     value: timeStr,
                     unit: 'total',
-                    color: const Color(0xFF00CFFF),
+                    color: AppColors.cyan,
                     icon: Icons.timer,
                   ),
                   const SizedBox(width: 10),
@@ -216,29 +214,28 @@ class _ActivityScreenState extends State<ActivityScreen>
                     label: 'SESSIONS',
                     value: '${sessions.length}',
                     unit: 'total',
-                    color: const Color(0xFFFFD700),
+                    color: AppColors.gold,
                     icon: Icons.flag,
                   ),
                 ],
               ),
               const SizedBox(height: 10),
-              // Type breakdown
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0D1A0D),
+                  color: AppColors.bgCard,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF1A3A1A)),
+                  border: Border.all(color: AppColors.borderDim),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _TypeCount(emoji: '🚶', label: 'Walks', count: totalWalks,
-                        color: const Color(0xFF00CFFF)),
+                        color: AppColors.cyan),
                     _TypeCount(emoji: '🏃', label: 'Jogs', count: totalJogs,
-                        color: const Color(0xFFFFD700)),
+                        color: AppColors.gold),
                     _TypeCount(emoji: '⚡', label: 'Runs', count: totalRuns,
-                        color: const Color(0xFF00FF41)),
+                        color: AppColors.blue),
                   ],
                 ),
               ),
@@ -254,7 +251,7 @@ class _ActivityScreenState extends State<ActivityScreen>
       return const SliverToBoxAdapter(
         child: Center(
           child: Text('Not logged in',
-              style: TextStyle(color: Color(0xFF3A5A3A))),
+              style: TextStyle(color: AppColors.textSub)),
         ),
       );
     }
@@ -272,7 +269,7 @@ class _ActivityScreenState extends State<ActivityScreen>
             child: Padding(
               padding: EdgeInsets.only(top: 40),
               child: Center(
-                child: CircularProgressIndicator(color: Color(0xFF00FF41)),
+                child: CircularProgressIndicator(color: AppColors.blue),
               ),
             ),
           );
@@ -299,14 +296,13 @@ class _ActivityScreenState extends State<ActivityScreen>
               child: Center(
                 child: Text(
                   'No ${_filterType?.label ?? ''} sessions yet.',
-                  style: const TextStyle(color: Color(0xFF3A5A3A), fontSize: 13),
+                  style: const TextStyle(color: AppColors.textSub, fontSize: 13),
                 ),
               ),
             ),
           );
         }
 
-        // Group by date
         final grouped = <String, List<ActivitySession>>{};
         for (final s in sessions) {
           final key = DateFormat('MMMM d, yyyy').format(s.startTime);
@@ -314,30 +310,29 @@ class _ActivityScreenState extends State<ActivityScreen>
         }
 
         return SliverList(
-  delegate: SliverChildBuilderDelegate(
-    (context, index) {
-      final keys = grouped.keys.toList();
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final keys = grouped.keys.toList();
 
-      // Build flat list: [header, card, card, header, card, ...]
-      final items = <Widget>[];
-      for (final key in keys) {
-        items.add(_DateHeader(date: key));
-        for (final session in grouped[key]!) {
-          items.add(_ActivityCard(session: session));
-        }
-      }
-      if (index >= items.length) return null;
-      return items[index];
-    },
-    childCount: () {
-      int count = 0;
-      for (final key in grouped.keys) {
-        count += 1 + grouped[key]!.length; // header + cards
-      }
-      return count;
-    }(),
-  ),
-);
+              final items = <Widget>[];
+              for (final key in keys) {
+                items.add(_DateHeader(date: key));
+                for (final session in grouped[key]!) {
+                  items.add(_ActivityCard(session: session));
+                }
+              }
+              if (index >= items.length) return null;
+              return items[index];
+            },
+            childCount: () {
+              int count = 0;
+              for (final key in grouped.keys) {
+                count += 1 + grouped[key]!.length;
+              }
+              return count;
+            }(),
+          ),
+        );
       },
     );
   }
@@ -348,9 +343,9 @@ class _ActivityScreenState extends State<ActivityScreen>
       child: Container(
         padding: const EdgeInsets.all(32),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D1A0D),
+          color: AppColors.bgCard,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFF1A3A1A)),
+          border: Border.all(color: AppColors.borderDim),
         ),
         child: Column(
           children: [
@@ -359,17 +354,17 @@ class _ActivityScreenState extends State<ActivityScreen>
               height: 72,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF1A3A1A),
-                border: Border.all(color: const Color(0xFF2A5A2A)),
+                color: AppColors.borderDim,
+                border: Border.all(color: AppColors.textSub.withOpacity(0.3)),
               ),
               child: const Icon(Icons.directions_run,
-                  color: Color(0xFF3A6A3A), size: 32),
+                  color: AppColors.textSub, size: 32),
             ),
             const SizedBox(height: 16),
             const Text(
               'NO ACTIVITY YET',
               style: TextStyle(
-                color: Color(0xFF4A8A4A),
+                color: AppColors.textMain,
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 2,
@@ -379,7 +374,7 @@ class _ActivityScreenState extends State<ActivityScreen>
             const Text(
               'Hit START RUN on the home screen\nto log your first session!',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF3A5A3A), fontSize: 12),
+              style: TextStyle(color: AppColors.textSub, fontSize: 12),
             ),
           ],
         ),
@@ -388,9 +383,6 @@ class _ActivityScreenState extends State<ActivityScreen>
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Activity Card  — single session row (Strava-style)
-// ─────────────────────────────────────────────────────────────────────────────
 class _ActivityCard extends StatelessWidget {
   final ActivitySession session;
 
@@ -398,9 +390,9 @@ class _ActivityCard extends StatelessWidget {
 
   Color get _typeColor {
     switch (session.type) {
-      case ActivityType.walk: return const Color(0xFF00CFFF);
-      case ActivityType.jog:  return const Color(0xFFFFD700);
-      case ActivityType.run:  return const Color(0xFF00FF41);
+      case ActivityType.walk: return AppColors.cyan;
+      case ActivityType.jog:  return AppColors.gold;
+      case ActivityType.run:  return AppColors.blue;
     }
   }
 
@@ -412,7 +404,7 @@ class _ActivityCard extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A0D),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _typeColor.withOpacity(0.2)),
         boxShadow: [
@@ -426,7 +418,6 @@ class _ActivityCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Top row
           Row(
             children: [
               Container(
@@ -464,13 +455,13 @@ class _ActivityCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 5, vertical: 1),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFCCCC44).withOpacity(0.12),
+                              color: AppColors.gold.withOpacity(0.12),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text(
+                            child: const Text(
                               'GPS override',
-                              style: const TextStyle(
-                                color: Color(0xFFAAAA33),
+                              style: TextStyle(
+                                color: AppColors.gold,
                                 fontSize: 8,
                               ),
                             ),
@@ -481,14 +472,13 @@ class _ActivityCard extends StatelessWidget {
                     Text(
                       time,
                       style: const TextStyle(
-                        color: Color(0xFF4A7A4A),
+                        color: AppColors.textSub,
                         fontSize: 11,
                       ),
                     ),
                   ],
                 ),
               ),
-              // XP badge
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -496,13 +486,13 @@ class _ActivityCard extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFFD700).withOpacity(0.1),
+                      color: AppColors.gold.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       '+${session.xpEarned} XP',
                       style: const TextStyle(
-                        color: Color(0xFFFFD700),
+                        color: AppColors.gold,
                         fontSize: 10,
                         fontWeight: FontWeight.w700,
                       ),
@@ -512,7 +502,7 @@ class _ActivityCard extends StatelessWidget {
                   Text(
                     '+${session.coinsEarned} 🪙',
                     style: const TextStyle(
-                      color: Color(0xFF8A7A2A),
+                      color: AppColors.textSub,
                       fontSize: 10,
                     ),
                   ),
@@ -522,10 +512,9 @@ class _ActivityCard extends StatelessWidget {
           ),
 
           const SizedBox(height: 12),
-          const Divider(color: Color(0xFF1A3A1A), height: 1),
+          const Divider(color: AppColors.borderDim, height: 1),
           const SizedBox(height: 12),
 
-          // Stats
           Row(
             children: [
               _MiniStat(
@@ -535,15 +524,15 @@ class _ActivityCard extends StatelessWidget {
               _MiniStat(
                   label: 'DURATION',
                   value: session.formattedDuration,
-                  color: const Color(0xFFCCCCCC)),
+                  color: AppColors.textMain),
               _MiniStat(
                   label: 'PACE',
                   value: session.formattedPace,
-                  color: const Color(0xFFFFD700)),
+                  color: AppColors.gold),
               _MiniStat(
                   label: 'MAX SPD',
                   value: '${session.maxSpeedKmh.toStringAsFixed(1)} km/h',
-                  color: const Color(0xFFFF6B35)),
+                  color: AppColors.orange),
             ],
           ),
         ],
@@ -580,7 +569,7 @@ class _MiniStat extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              color: Color(0xFF3A5A3A),
+              color: AppColors.textSub,
               fontSize: 8,
               letterSpacing: 0.5,
             ),
@@ -591,9 +580,6 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-//  Sub-widgets
-// ─────────────────────────────────────────────────────────────────────────────
 class _DateHeader extends StatelessWidget {
   final String date;
   const _DateHeader({required this.date});
@@ -607,7 +593,7 @@ class _DateHeader extends StatelessWidget {
           Text(
             date.toUpperCase(),
             style: const TextStyle(
-              color: Color(0xFF4A8A4A),
+              color: AppColors.textSub,
               fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 2,
@@ -615,7 +601,7 @@ class _DateHeader extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           const Expanded(
-            child: Divider(color: Color(0xFF1A3A1A), height: 1),
+            child: Divider(color: AppColors.borderDim, height: 1),
           ),
         ],
       ),
@@ -644,17 +630,17 @@ class _FilterChip extends StatelessWidget {
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.15) : const Color(0xFF0D1A0D),
+          color: isSelected ? color.withOpacity(0.15) : AppColors.bgCard,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isSelected ? color : const Color(0xFF1A3A1A),
+            color: isSelected ? color : AppColors.borderDim,
             width: isSelected ? 1.5 : 1,
           ),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? color : const Color(0xFF3A5A3A),
+            color: isSelected ? color : AppColors.textSub,
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
             letterSpacing: 0.5,
@@ -686,7 +672,7 @@ class _SummaryCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: const Color(0xFF0D1A0D),
+          color: AppColors.bgCard,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withOpacity(0.2)),
         ),
@@ -702,11 +688,11 @@ class _SummaryCard extends StatelessWidget {
                     fontWeight: FontWeight.w800)),
             Text(unit,
                 style: const TextStyle(
-                    color: Color(0xFF3A5A3A), fontSize: 9)),
+                    color: AppColors.textSub, fontSize: 9)),
             const SizedBox(height: 2),
             Text(label,
                 style: const TextStyle(
-                    color: Color(0xFF3A6A3A),
+                    color: AppColors.textSub,
                     fontSize: 9,
                     letterSpacing: 0.5)),
           ],
@@ -744,7 +730,7 @@ class _TypeCount extends StatelessWidget {
         ),
         Text(
           label,
-          style: const TextStyle(color: Color(0xFF3A5A3A), fontSize: 10),
+          style: const TextStyle(color: AppColors.textSub, fontSize: 10),
         ),
       ],
     );

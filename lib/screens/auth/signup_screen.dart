@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_colors.dart';
 import '../main_shell.dart';
+import '../character/character_creation_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -18,14 +20,30 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _loading = false;
   bool _obscure = true;
   bool _obscureConfirm = true;
+  String? _gender; // 'male' | 'female'
 
-  void _goHome() {
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainShell()),
-      (_) => false,
-    );
+  Future<void> _goHome() async {
+  if (!mounted) return;
+
+  final uid = FirebaseAuth.instance.currentUser?.uid;
+  bool characterCreated = false;
+
+  if (uid != null) {
+    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+    characterCreated = doc.data()?['character_created'] as bool? ?? false;
   }
+
+  if (!mounted) return;
+
+  Navigator.of(context).pushAndRemoveUntil(
+    MaterialPageRoute(
+      builder: (_) => characterCreated
+          ? const MainShell()
+          : const CharacterCreationScreen(),
+    ),
+    (_) => false,
+  );
+}
 
   void _snack(String msg) {
     if (!mounted) return;
@@ -33,30 +51,40 @@ class _SignupScreenState extends State<SignupScreen> {
         .showSnackBar(SnackBar(content: Text(msg)));
   }
 
-  Future<void> _createUserDoc(User user, String username) async {
-    final doc = await FirebaseFirestore.instance
+  Future<void> _createUserDoc(User user, String username, {String? gender}) async {
+  final doc = await FirebaseFirestore.instance
+      .collection('users')
+      .doc(user.uid)
+      .get();
+  if (!doc.exists) {
+    await FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
-        .get();
-    if (!doc.exists) {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .set({
-        'username': username,
-        'email': user.email,
-        'level': 1,
-        'xp': 0,
-        'coins': 100,
-        'gems': 10,
-        'heroic_souls': 0,
-        'total_km': 0.0,
-        'total_steps': 0,
-        'total_sessions': 0,
-        'created_at': FieldValue.serverTimestamp(),
-      });
-    }
+        .set({
+      'username': username,
+      'email': user.email,
+      'gender': gender,
+      'level': 1,
+      'xp': 0,
+      'coins': 100,
+      'gems': 10,
+      'heroic_souls': 0,
+      'total_km': 0.0,
+      'total_steps': 0,
+      'total_sessions': 0,
+      'created_at': FieldValue.serverTimestamp(),
+
+      // ── New: character customization fields ─────────────────────
+      'character_created': false,   // flips to true once they finish the creation flow
+      'height_cm': null,
+      'weight_kg': null,
+      'skin_tone': '#E0AC69',       // default until they pick one
+      'hair_style': 'short',        // default until they pick one
+      'hair_color': '#1A1A1A',      // default until they pick one
+      'body_tier': 'average',       // recalculated once height/weight are set
+    });
   }
+}
 
   Future<void> _signupEmail() async {
     final username = _usernameCtrl.text.trim();
@@ -64,7 +92,7 @@ class _SignupScreenState extends State<SignupScreen> {
     final pass = _passCtrl.text.trim();
     final confirm = _confirmCtrl.text.trim();
 
-    if (username.isEmpty || email.isEmpty || pass.isEmpty) {
+    if (username.isEmpty || email.isEmpty || pass.isEmpty || _gender == null) {
       _snack('Please fill in all fields.');
       return;
     }
@@ -85,7 +113,7 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       if (cred.user != null) {
         await cred.user!.updateDisplayName(username);
-        await _createUserDoc(cred.user!, username);
+        await _createUserDoc(cred.user!, username, gender: _gender);
         _goHome();
       }
     } on FirebaseAuthException catch (e) {
@@ -123,19 +151,18 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF060C06),
+      backgroundColor: AppColors.bgDeep,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Back button
               Align(
                 alignment: Alignment.centerLeft,
                 child: IconButton(
                   icon: const Icon(Icons.arrow_back_ios,
-                      color: Color(0xFF4A8A4A), size: 18),
+                      color: AppColors.textSub, size: 18),
                   onPressed: () => Navigator.pop(context),
                 ),
               ),
@@ -143,7 +170,7 @@ class _SignupScreenState extends State<SignupScreen> {
               const Text(
                 'CREATE ACCOUNT',
                 style: TextStyle(
-                  color: Color(0xFF00FF41),
+                  color: AppColors.blue,
                   fontSize: 22,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 3,
@@ -153,7 +180,7 @@ class _SignupScreenState extends State<SignupScreen> {
               const Text(
                 'Begin your hero journey',
                 style: TextStyle(
-                  color: Color(0xFF4A7A4A),
+                  color: AppColors.textSub,
                   fontSize: 13,
                 ),
               ),
@@ -178,7 +205,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 suffixIcon: IconButton(
                   icon: Icon(
                     _obscure ? Icons.visibility_off : Icons.visibility,
-                    color: const Color(0xFF4A8A4A),
+                    color: AppColors.textSub,
                     size: 20,
                   ),
                   onPressed: () => setState(() => _obscure = !_obscure),
@@ -195,22 +222,24 @@ class _SignupScreenState extends State<SignupScreen> {
                     _obscureConfirm
                         ? Icons.visibility_off
                         : Icons.visibility,
-                    color: const Color(0xFF4A8A4A),
+                    color: AppColors.textSub,
                     size: 20,
                   ),
                   onPressed: () =>
                       setState(() => _obscureConfirm = !_obscureConfirm),
                 ),
               ),
+              const SizedBox(height: 14),
+              _buildGenderPicker(),
               const SizedBox(height: 24),
               SizedBox(
                 height: 52,
                 child: ElevatedButton(
                   onPressed: _loading ? null : _signupEmail,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00FF41),
+                    backgroundColor: AppColors.blue,
                     disabledBackgroundColor:
-                        const Color(0xFF00FF41).withOpacity(0.5),
+                        AppColors.blue.withOpacity(0.5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -220,14 +249,14 @@ class _SignupScreenState extends State<SignupScreen> {
                           width: 20,
                           height: 20,
                           child: CircularProgressIndicator(
-                            color: Color(0xFF0A0F0A),
+                            color: Colors.white,
                             strokeWidth: 2,
                           ),
                         )
                       : const Text(
                           'CREATE HERO',
                           style: TextStyle(
-                            color: Color(0xFF0A0F0A),
+                            color: Colors.white,
                             fontSize: 15,
                             fontWeight: FontWeight.w900,
                             letterSpacing: 3,
@@ -238,15 +267,13 @@ class _SignupScreenState extends State<SignupScreen> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Expanded(
-                      child: Divider(color: const Color(0xFF1A3A1A))),
+                  const Expanded(child: Divider(color: AppColors.borderDim)),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 12),
                     child: Text('or',
-                        style: TextStyle(color: Color(0xFF3A6A3A))),
+                        style: TextStyle(color: AppColors.textSub)),
                   ),
-                  Expanded(
-                      child: Divider(color: const Color(0xFF1A3A1A))),
+                  const Expanded(child: Divider(color: AppColors.borderDim)),
                 ],
               ),
               const SizedBox(height: 16),
@@ -255,17 +282,17 @@ class _SignupScreenState extends State<SignupScreen> {
                 child: OutlinedButton.icon(
                   onPressed: _loading ? null : _signupGoogle,
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF1A4A1A)),
+                    side: const BorderSide(color: AppColors.borderDim),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   icon: const Icon(Icons.g_mobiledata,
-                      color: Color(0xFF00FF41), size: 22),
+                      color: AppColors.blue, size: 22),
                   label: const Text(
                     'Sign up with Google',
                     style: TextStyle(
-                      color: Color(0xFFD0EED0),
+                      color: AppColors.textMain,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -279,14 +306,14 @@ class _SignupScreenState extends State<SignupScreen> {
                   const Text(
                     'Already have an account? ',
                     style:
-                        TextStyle(color: Color(0xFF4A7A4A), fontSize: 13),
+                        TextStyle(color: AppColors.textSub, fontSize: 13),
                   ),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: const Text(
                       'Login',
                       style: TextStyle(
-                        color: Color(0xFF00FF41),
+                        color: AppColors.blue,
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
                       ),
@@ -310,24 +337,69 @@ class _SignupScreenState extends State<SignupScreen> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1A0D),
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFF1A3A1A)),
+        border: Border.all(color: AppColors.borderDim),
       ),
       child: TextField(
         controller: controller,
         obscureText: obscure,
-        style: const TextStyle(color: Color(0xFFD0EED0), fontSize: 14),
+        style: const TextStyle(color: AppColors.textMain, fontSize: 14),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(color: Color(0xFF3A6A3A), fontSize: 14),
-          prefixIcon: Icon(icon, color: const Color(0xFF4A8A4A), size: 20),
+          hintStyle: const TextStyle(color: AppColors.textSub, fontSize: 14),
+          prefixIcon: Icon(icon, color: AppColors.textSub, size: 20),
           suffixIcon: suffixIcon,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(
               vertical: 16, horizontal: 16),
         ),
       ),
+    );
+  }
+
+  Widget _buildGenderPicker() {
+    Widget option(String value, String label, IconData icon) {
+      final selected = _gender == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _gender = value),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: selected
+                  ? AppColors.blue.withOpacity(0.12)
+                  : AppColors.bgCard,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: selected ? AppColors.blue : AppColors.borderDim,
+                width: selected ? 1.5 : 1,
+              ),
+            ),
+            child: Column(
+              children: [
+                Icon(icon,
+                    color: selected ? AppColors.blue : AppColors.textSub,
+                    size: 22),
+                const SizedBox(height: 6),
+                Text(label,
+                    style: TextStyle(
+                        color: selected ? AppColors.blue : AppColors.textMain,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      children: [
+        option('male', 'Male', Icons.male),
+        const SizedBox(width: 12),
+        option('female', 'Female', Icons.female),
+      ],
     );
   }
 }

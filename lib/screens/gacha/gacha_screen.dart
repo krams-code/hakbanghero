@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../theme/app_colors.dart';
 
 class GachaScreen extends StatefulWidget {
   const GachaScreen({super.key});
@@ -10,17 +11,17 @@ class GachaScreen extends StatefulWidget {
 }
 
 class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin {
-  static const Color bgDeep   = Color(0xFF060C06);
-  static const Color bgPanel  = Color(0xFF0A140A);
-  static const Color bgCard   = Color(0xFF0F1E0F);
-  static const Color green    = Color(0xFF00FF41);
-  static const Color greenDim = Color(0xFF1A4A1A);
-  static const Color gold     = Color(0xFFFFD700);
-  static const Color purple   = Color(0xFF9B59FF);
-  static const Color teal     = Color(0xFF00E5CC);
-  static const Color textMain = Color(0xFFE0F0E0);
-  static const Color textSub  = Color(0xFF4A6A4A);
-  static const Color mana     = Color(0xFFB388FF);
+  static const Color bgDeep   = AppColors.bgDeep;
+  static const Color bgPanel  = AppColors.bgPanel;
+  static const Color bgCard   = AppColors.bgCard;
+  static const Color green    = AppColors.blue;
+  static const Color greenDim = AppColors.borderDim;
+  static const Color gold     = AppColors.gold;
+  static const Color purple   = AppColors.purple;
+  static const Color teal     = AppColors.cyan;
+  static const Color textMain = AppColors.textMain;
+  static const Color textSub  = AppColors.textSub;
+  static const Color mana     = AppColors.purple;
 
   int _selectedTab = 1;
   bool _isPulling  = false;
@@ -38,7 +39,7 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
       'name'    : 'HEROES GUILD',
       'subtitle': 'Rare Hero Drop Rate 1%',
       'color'   : teal,
-      'orbColor': Color(0xFF00E5CC),
+      'orbColor': teal,
       'icon'    : '⚔️',
       'x1cost'  : 150,
       'x10cost' : 1350,
@@ -48,7 +49,7 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
       'name'    : 'ANCIENT ARTIFACTS',
       'subtitle': 'Legendary Gear Drop Rate 0%',
       'color'   : gold,
-      'orbColor': Color(0xFFFFD700),
+      'orbColor': gold,
       'icon'    : '✨',
       'x1cost'  : 150,
       'x10cost' : 1350,
@@ -66,14 +67,7 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
     {'name': 'Divine Gauntlet', 'rarity': 'Divine',    'icon': '🧤', 'type': 'Gloves',    'weight': 0},
   ];
 
-  static const Map<String, Color> rarityColor = {
-    'Common'   : Color(0xFF9E9E9E),
-    'Uncommon' : Color(0xFF4CAF50),
-    'Rare'     : Color(0xFF2196F3),
-    'Epic'     : Color(0xFF9C27B0),
-    'Legendary': Color(0xFFFFD700),
-    'Divine'   : Color(0xFFFF6B35),
-  };
+  static const Map<String, Color> rarityColor = AppColors.rarityColor;
 
   @override
   void initState() {
@@ -127,7 +121,7 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
         SnackBar(
           content: const Text('Not enough Mana Crystals!',
               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.red.shade800,
+          backgroundColor: AppColors.red,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
@@ -225,7 +219,6 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
             },
           ),
           const Spacer(),
-          // Single Mana Crystals chip
           _ManaCrystalChip(value: _loadingCurrency ? '...' : '$_manaCrystals'),
           const SizedBox(width: 10),
           const Icon(Icons.settings, color: textSub, size: 20),
@@ -307,7 +300,6 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
               ),
             ),
           ),
-          // Mana Crystal cluster in centre
           _buildCentreOrb(accent),
           if (_isPulling)
             Container(
@@ -331,14 +323,14 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(colors: [
-                const Color(0xFF7B4FFF).withValues(alpha: 0.4),
+                AppColors.purple.withValues(alpha: 0.4),
                 Colors.transparent,
               ]),
             ),
           ),
-          Positioned(top: 8,  left: 28, child: _MiniCrystal(size: 26, color: const Color(0xFFB388FF))),
-          Positioned(top: 24, left: 14, child: _MiniCrystal(size: 22, color: const Color(0xFF9B59FF))),
-          Positioned(top: 24, left: 46, child: _MiniCrystal(size: 22, color: const Color(0xFFCE93D8))),
+          Positioned(top: 8,  left: 28, child: _MiniCrystal(size: 26, color: AppColors.purple)),
+          Positioned(top: 24, left: 14, child: _MiniCrystal(size: 22, color: AppColors.purple)),
+          Positioned(top: 24, left: 46, child: _MiniCrystal(size: 22, color: AppColors.cyan)),
         ],
       ),
     );
@@ -473,7 +465,6 @@ class _GachaScreenState extends State<GachaScreen> with TickerProviderStateMixin
   }
 }
 
-// ── Mana Crystal chip ─────────────────────────────────────────────────────────
 class _ManaCrystalChip extends StatelessWidget {
   final String value;
   const _ManaCrystalChip({required this.value});
@@ -483,24 +474,23 @@ class _ManaCrystalChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: const Color(0xFF7B4FFF).withValues(alpha: 0.15),
+        color: AppColors.purple.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF7B4FFF).withValues(alpha: 0.5)),
-        boxShadow: [BoxShadow(color: const Color(0xFF7B4FFF).withValues(alpha: 0.2), blurRadius: 8)],
+        border: Border.all(color: AppColors.purple.withValues(alpha: 0.5)),
+        boxShadow: [BoxShadow(color: AppColors.purple.withValues(alpha: 0.2), blurRadius: 8)],
       ),
       child: Row(
         children: [
           SizedBox(width: 16, height: 16, child: CustomPaint(painter: _CrystalPainter())),
           const SizedBox(width: 5),
           Text(value,
-              style: const TextStyle(color: Color(0xFFB388FF), fontWeight: FontWeight.bold, fontSize: 12)),
+              style: const TextStyle(color: AppColors.purple, fontWeight: FontWeight.bold, fontSize: 12)),
         ],
       ),
     );
   }
 }
 
-// ── Mini crystal for orb cluster ──────────────────────────────────────────────
 class _MiniCrystal extends StatelessWidget {
   final double size;
   final Color  color;
@@ -512,10 +502,9 @@ class _MiniCrystal extends StatelessWidget {
   }
 }
 
-// ── Crystal shape painter ──────────────────────────────────────────────────────
 class _CrystalPainter extends CustomPainter {
   final Color color;
-  const _CrystalPainter({this.color = const Color(0xFFB388FF)});
+  const _CrystalPainter({this.color = AppColors.purple});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -562,7 +551,6 @@ class _CrystalPainter extends CustomPainter {
   bool shouldRepaint(_CrystalPainter old) => old.color != color;
 }
 
-// ── Pull Results Sheet ────────────────────────────────────────────────────────
 class _PullResultsSheet extends StatelessWidget {
   final List<Map<String, dynamic>> results;
   final Map<String, Color> rarityColor;
@@ -571,25 +559,25 @@ class _PullResultsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF0A140A),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border(top: BorderSide(color: Color(0xFF00FF41), width: 1)),
+      decoration: BoxDecoration(
+        color: AppColors.bgPanel,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        border: Border(top: BorderSide(color: AppColors.blue, width: 1)),
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: const Color(0xFF1A4A1A), borderRadius: BorderRadius.circular(2))),
+              decoration: BoxDecoration(color: AppColors.borderDim, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
           const Text('SUMMON RESULTS',
-              style: TextStyle(color: Color(0xFF00FF41), fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 3)),
+              style: TextStyle(color: AppColors.blue, fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 3)),
           const SizedBox(height: 16),
           Wrap(
             spacing: 10, runSpacing: 10, alignment: WrapAlignment.center,
             children: results.map((item) {
-              final color = rarityColor[item['rarity']] ?? const Color(0xFF9E9E9E);
+              final color = rarityColor[item['rarity']] ?? AppColors.textSub;
               return Container(
                 width: 80, height: 90,
                 decoration: BoxDecoration(
@@ -605,7 +593,7 @@ class _PullResultsSheet extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(item['rarity'] as String, style: TextStyle(color: color, fontSize: 8, fontWeight: FontWeight.bold)),
                     Text(item['name'] as String,
-                        style: const TextStyle(color: Color(0xFFE0F0E0), fontSize: 8),
+                        style: const TextStyle(color: AppColors.textMain, fontSize: 8),
                         textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis),
                   ],
                 ),
@@ -619,13 +607,13 @@ class _PullResultsSheet extends StatelessWidget {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
-                color: const Color(0xFF1A4A1A),
+                color: AppColors.borderDim,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFF00FF41), width: 1),
+                border: Border.all(color: AppColors.blue, width: 1),
               ),
               child: const Text('CLOSE',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Color(0xFF00FF41), fontWeight: FontWeight.bold, letterSpacing: 2)),
+                  style: TextStyle(color: AppColors.blue, fontWeight: FontWeight.bold, letterSpacing: 2)),
             ),
           ),
           const SizedBox(height: 8),
