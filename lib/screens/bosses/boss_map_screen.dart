@@ -19,6 +19,23 @@ class _BossMapScreenState extends State<BossMapScreen> {
   bool _loading = true;
   bool _fighting = false;
 
+  // Node positions as fractions of the image's width/height (0.0–1.0),
+  // eyeballed to sit along the uploaded map's path bends from bottom
+  // (weakest boss) to top (final boss). Nudge these if any node looks
+  // slightly off the path once you see it rendered on your screen.
+  static const List<Offset> _nodePositions = [
+    Offset(0.28, 0.86), // boss 0 — bottom start arch
+    Offset(0.52, 0.74), // boss 1
+    Offset(0.34, 0.60), // boss 2
+    Offset(0.50, 0.46), // boss 3
+    Offset(0.68, 0.34), // boss 4
+    Offset(0.68, 0.14), // boss 5 — final boss near the top silhouette
+  ];
+
+  // Matches the uploaded image's actual pixel dimensions (roughly
+  // 1024x552). Update this if you ever swap in a differently-sized image.
+  static const double _imageAspectRatio = 1024 / 552;
+
   @override
   void initState() {
     super.initState();
@@ -78,11 +95,8 @@ class _BossMapScreenState extends State<BossMapScreen> {
     );
   }
 
-  // NOTE: Combat Power here uses level only. Your equipped gear stats
-  // currently live only in local Equipment screen state, not Firestore,
-  // so they can't factor in here yet — see combat_power.dart notes.
   Future<void> _resolveFight(BossDefinition boss) async {
-    Navigator.of(context).pop(); // close the detail sheet
+    Navigator.of(context).pop();
     setState(() => _fighting = true);
 
     final playerCp = CombatPower.calculate(level: _playerLevel);
@@ -90,7 +104,7 @@ class _BossMapScreenState extends State<BossMapScreen> {
     final roll = Random().nextDouble();
     final won = roll <= chance;
 
-    await Future.delayed(const Duration(milliseconds: 900)); // brief "battle" beat
+    await Future.delayed(const Duration(milliseconds: 900));
 
     BossLoot? loot;
     if (won) {
@@ -147,7 +161,7 @@ class _BossMapScreenState extends State<BossMapScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      isDismissible: !won, // force acknowledging a win's loot
+      isDismissible: !won,
       builder: (_) => _BattleResultSheet(
         boss: boss,
         won: won,
@@ -160,6 +174,9 @@ class _BossMapScreenState extends State<BossMapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final mapHeight = screenWidth / _imageAspectRatio;
+
     return Scaffold(
       backgroundColor: AppColors.bgDeep,
       appBar: AppBar(
@@ -178,31 +195,43 @@ class _BossMapScreenState extends State<BossMapScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppColors.blue))
-          : SafeArea(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(20),
-                itemCount: kBossList.length,
-                itemBuilder: (context, index) {
-                  final boss = kBossList[index];
-                  final unlocked = _isUnlocked(index);
-                  final defeated = _defeatedIds.contains(boss.id);
-                  return Column(
-                    children: [
-                      _BossNode(
-                        boss: boss,
-                        unlocked: unlocked,
-                        defeated: defeated,
-                        onTap: () => _onTapBoss(index),
-                      ),
-                      if (index < kBossList.length - 1)
-                        Container(
-                          width: 3,
-                          height: 36,
-                          color: unlocked ? AppColors.blue.withOpacity(0.4) : AppColors.borderDim,
+          : SingleChildScrollView(
+              child: SizedBox(
+                width: screenWidth,
+                height: mapHeight,
+                child: Stack(
+                  children: [
+                    // ── Your map artwork, sized to preserve its aspect ratio ──
+                    Positioned.fill(
+                      child: Image.asset(
+                        'assets/images/boss_map_bg.png',
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [AppColors.bgPanel, AppColors.bgDeep],
+                            ),
+                          ),
                         ),
-                    ],
-                  );
-                },
+                      ),
+                    ),
+
+                    // ── Boss nodes placed along the illustrated path ──
+                    for (int i = 0; i < kBossList.length; i++)
+                      Positioned(
+                        left: (_nodePositions[i].dx * screenWidth) - 40,
+                        top: (_nodePositions[i].dy * mapHeight) - 40,
+                        child: _BossNode(
+                          boss: kBossList[i],
+                          unlocked: _isUnlocked(i),
+                          defeated: _defeatedIds.contains(kBossList[i].id),
+                          onTap: () => _onTapBoss(i),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
     );
@@ -232,58 +261,52 @@ class _BossNode extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.6), width: defeated ? 2 : 1),
-          boxShadow: unlocked
-              ? [BoxShadow(color: color.withOpacity(0.15), blurRadius: 12)]
-              : [],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: color.withOpacity(0.12),
-                border: Border.all(color: color.withOpacity(0.6), width: 2),
-              ),
-              child: Center(
-                child: unlocked
-                    ? Text(boss.emoji, style: const TextStyle(fontSize: 26))
-                    : const Icon(Icons.lock, color: AppColors.textSub, size: 22),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.bgCard,
+              border: Border.all(color: color, width: defeated ? 3 : 2),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(unlocked ? 0.5 : 0.1),
+                  blurRadius: 16,
+                  spreadRadius: unlocked ? 2 : 0,
+                ),
+              ],
+            ),
+            child: Center(
+              child: unlocked
+                  ? Text(boss.emoji, style: const TextStyle(fontSize: 30))
+                  : const Icon(Icons.lock, color: AppColors.textSub, size: 24),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.bgPanel.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              unlocked ? boss.name : '???',
+              style: TextStyle(
+                color: unlocked ? AppColors.textMain : AppColors.textSub,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    unlocked ? boss.name : '???',
-                    style: TextStyle(
-                      color: unlocked ? AppColors.textMain : AppColors.textSub,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    unlocked ? 'Power: ${boss.power}' : 'Defeat previous boss to unlock',
-                    style: const TextStyle(color: AppColors.textSub, fontSize: 11),
-                  ),
-                ],
-              ),
+          ),
+          if (defeated)
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Icon(Icons.check_circle, color: AppColors.gold, size: 16),
             ),
-            if (defeated)
-              const Icon(Icons.check_circle, color: AppColors.gold, size: 22),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -446,8 +469,8 @@ class _BattleResultSheet extends StatelessWidget {
           ],
           if (!won) ...[
             const SizedBox(height: 12),
-            Text('Level up or gear up, then try again.',
-                style: const TextStyle(color: AppColors.textSub, fontSize: 11)),
+            const Text('Level up or gear up, then try again.',
+                style: TextStyle(color: AppColors.textSub, fontSize: 11)),
           ],
           const SizedBox(height: 20),
           SizedBox(
