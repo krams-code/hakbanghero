@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'block_ui.dart';
+import 'tutorial_keys.dart';
 
 /// Roblox-style bottom navigation bar.
 ///
@@ -124,7 +125,9 @@ class BlockNavBar extends StatelessWidget {
             left: 0,
             right: 0,
             child: Center(
-              child: PressBlock(
+              child: KeyedSubtree(
+                key: TutorialKeys.runButton,
+                child: PressBlock(
                 color: Rb.blue,
                 edge: Rb.blueEdge,
                 depth: 9,
@@ -153,6 +156,7 @@ class BlockNavBar extends StatelessWidget {
                     ],
                   ),
                 ),
+              ),
               ),
             ),
           ),

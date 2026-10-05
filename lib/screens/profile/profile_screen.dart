@@ -1,592 +1,498 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../theme/app_colors.dart';
-import '../../widgets/hero_sprite.dart';
-// TODO: adjust this path if your creation screen lives in a different folder.
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import 'package:hakbanghero/models/activity_model.dart';
+
+import '../../utils/player_stats.dart';
+import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
+import '../../widgets/avatar_preview.dart';
+import '../../widgets/block_ui.dart';
+import '../../widgets/global_top_bar.dart' show confirmLogout;
 import '../character/character_creation_screen.dart';
 
+/// Player profile + fitness stat dashboard (Roblox block style).
+///
+/// No combat placeholders (ATK / DEF / HP). The three stat modules are
+/// computed from real session history — see utils/player_stats.dart.
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onBackTap;
-
   const ProfileScreen({super.key, this.onBackTap});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  Map<String, dynamic>? _userData;
+class _ProfileScreenState extends State<ProfileScreen> {
+  Map<String, dynamic> _user = {};
+  FitnessStats? _fit;
   bool _loading = true;
-
-  static const Color bgDeep   = AppColors.bgDeep;
-  static const Color bgPanel  = AppColors.bgPanel;
-  static const Color bgCard   = AppColors.bgCard;
-  static const Color green    = AppColors.blue;
-  static const Color greenDim = AppColors.borderDim;
-  static const Color gold     = AppColors.gold;
-  static const Color purple   = AppColors.purple;
-  static const Color red      = AppColors.red;
-  static const Color teal     = AppColors.cyan;
-  static const Color textMain = AppColors.textMain;
-  static const Color textSub  = AppColors.textSub;
-
-  static const Map<String, Color> rarityColor = AppColors.rarityColor;
-
-  final List<Map<String, dynamic>> _equippedGear = [
-    {
-      'slot'   : 'Weapon',
-      'name'   : 'Verdant Blade',
-      'rarity' : 'Legendary',
-      'icon'   : '⚔️',
-      'atk'    : 480,
-      'spd'    : 120,
-      'xpBonus': 25,
-    },
-    {
-      'slot'   : 'Helmet',
-      'name'   : 'Shadow Crown',
-      'rarity' : 'Epic',
-      'icon'   : '👑',
-      'def'    : 210,
-      'hp'     : 800,
-      'xpBonus': 10,
-    },
-    {
-      'slot'   : 'Armor',
-      'name'   : 'Forest Plate',
-      'rarity' : 'Rare',
-      'icon'   : '🛡️',
-      'def'    : 340,
-      'hp'     : 1200,
-      'xpBonus': 5,
-    },
-    {
-      'slot'   : 'Boots',
-      'name'   : 'Windrunner Treads',
-      'rarity' : 'Epic',
-      'icon'   : '👟',
-      'spd'    : 280,
-      'stam'   : 150,
-      'xpBonus': 15,
-    },
-  ];
-
-  int get _combatPower => (_userData?['level'] ?? 1) * 420 + 3850;
+  int _tab = 0; // 0 = STATS, 1 = RECORDS
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _loadUser();
+    _load();
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadUser() async {
+  Future<void> _load() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return;
+    if (uid == null) {
+      setState(() => _loading = false);
+      return;
+    }
     try {
-      final doc = await FirebaseFirestore.instance
+      final db = FirebaseFirestore.instance;
+      final userSnap = await db.collection('users').doc(uid).get();
+      final actSnap = await db
           .collection('users')
           .doc(uid)
+          .collection('activities')
+          .orderBy('startTime', descending: true)
+          .limit(120)
           .get();
-      if (mounted) {
-        setState(() {
-          _userData = doc.data() ?? {};
-          _loading  = false;
-        });
+
+      final sessions = <ActivitySession>[];
+      for (final d in actSnap.docs) {
+        try {
+          sessions.add(ActivitySession.fromFirestore(d));
+        } catch (_) {}
       }
+      final data = userSnap.data() ?? <String, dynamic>{};
+      if (!mounted) return;
+      setState(() {
+        _user = data;
+        _fit = FitnessStats.compute(
+          sessions,
+          weightKg: (data['weight_kg'] as num?)?.toDouble(),
+        );
+        _loading = false;
+      });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  /// Opens the character editor; reloads the profile when the user comes back
-  /// so the hero shows the new look immediately.
   Future<void> _editHero() async {
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const CharacterCreationScreen(isEditMode: true),
-      ),
+      MaterialPageRoute(builder: (_) => const CharacterCreationScreen(isEditMode: true)),
     );
-    if (mounted) _loadUser();
+    if (mounted) _load();
   }
 
-  Future<void> _signOut() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: bgPanel,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: red, width: 1),
-        ),
-        title: const Text('Sign Out',
-            style: TextStyle(color: textMain, fontWeight: FontWeight.bold)),
-        content: const Text('Are you sure you want to sign out?',
-            style: TextStyle(color: textSub)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel', style: TextStyle(color: textSub)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: red),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign Out',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
-    if (confirm == true) {
-      await FirebaseAuth.instance.signOut();
-      if (mounted) Navigator.of(context).popUntil((r) => r.isFirst);
-    }
-  }
+  // ───────────────────────── build ─────────────────────────
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
-        backgroundColor: bgDeep,
-        body: Center(child: CircularProgressIndicator(color: green)),
+        backgroundColor: Rb.bg,
+        body: Center(child: CircularProgressIndicator(color: Rb.green)),
       );
     }
 
-    final user          = FirebaseAuth.instance.currentUser;
-    final username      = _userData?['username']     ?? user?.displayName ?? 'Hero';
-    final level         = _userData?['level']        ?? 1;
-    final xp            = (_userData?['xp']          ?? 0) as int;
-    final xpNeeded      = level * 500;
-    final coins         = _userData?['coins']        ?? 0;
-    final gems          = _userData?['gems']         ?? 0;
-    final souls         = _userData?['heroic_souls'] ?? 0;
-    final totalKm       = (_userData?['total_km']    ?? 0.0) as double;
-    final sessions      = _userData?['total_sessions'] ?? 0;
-    final steps         = _userData?['total_steps']    ?? 0;
+    final user = FirebaseAuth.instance.currentUser;
+    final name = (_user['username'] as String?) ?? user?.displayName ?? 'Hero';
+    final xp = (_user['xp'] as num?)?.toInt() ?? 0;
+    final lv = LevelProgress.fromXp(xp);
+    final fit = _fit!;
 
     return Scaffold(
-      backgroundColor: bgDeep,
-      body: CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(
-            child: _buildHeroBanner(
-              username : username,
-              level    : level,
-              xp       : xp,
-              xpNeeded : xpNeeded,
-            ),
-          ),
-          SliverToBoxAdapter(child: _buildCombatPowerStrip()),
-          SliverToBoxAdapter(
-            child: _buildCurrencyRow(coins: coins, gems: gems, souls: souls),
-          ),
-          SliverToBoxAdapter(
-            child: TabBar(
-              controller          : _tabController,
-              indicatorColor      : green,
-              labelColor          : green,
-              unselectedLabelColor: textSub,
-              labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              tabs: const [
-                Tab(text: 'STATS'),
-                Tab(text: 'GEAR'),
-                Tab(text: 'RECORDS'),
-              ],
-            ),
-          ),
-          SliverFillRemaining(
-            hasScrollBody: true,
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildStatsTab(
-                    totalKm : totalKm,
-                    sessions: sessions,
-                    steps   : steps,
-                    level   : level),
-                _buildGearTab(),
-                _buildRecordsTab(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeroBanner({
-    required String username,
-    required int level,
-    required int xp,
-    required int xpNeeded,
-  }) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin  : Alignment.topCenter,
-          end    : Alignment.bottomCenter,
-          colors : [AppColors.bgPanel, bgDeep],
-        ),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 56, 20, 0),
-      child: Column(
-        children: [
-          Row(
+      backgroundColor: Rb.bg,
+      body: SafeArea(
+        child: RefreshIndicator(
+          color: Rb.green,
+          onRefresh: _load,
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
             children: [
-              GestureDetector(
-                onTap: () => widget.onBackTap?.call(),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color       : bgCard,
-                    borderRadius: BorderRadius.circular(10),
-                    border      : Border.all(color: greenDim),
-                  ),
-                  child: const Icon(Icons.arrow_back_ios_new, color: green, size: 18),
-                ),
-              ),
-              const Spacer(),
-              const Text('PROFILE',
-                  style: TextStyle(
-                      color        : green,
-                      fontSize     : 14,
-                      fontWeight   : FontWeight.bold,
-                      letterSpacing: 4)),
-              const Spacer(),
-              GestureDetector(
-                onTap: _signOut,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color       : bgCard,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: red.withOpacity(0.3)),
-                  ),
-                  child: const Icon(Icons.logout, color: red, size: 18),
+              _header(),
+              const SizedBox(height: 14),
+              _heroCard(name, lv.level),
+              const SizedBox(height: 14),
+              _expRail(lv),
+              const SizedBox(height: 14),
+              _currencyRow(),
+              const SizedBox(height: 14),
+              _tabs(),
+              const SizedBox(height: 14),
+              if (_tab == 0) ..._statsTab(fit) else ..._recordsTab(fit),
+              const SizedBox(height: 20),
+              PressBlock(
+                color: Rb.red,
+                edge: Rb.redEdge,
+                depth: 8,
+                radius: 16,
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                onTap: () => confirmLogout(context),
+                child: const SizedBox(
+                  width: double.infinity,
+                  child: Center(child: BlockText('🚪 LOGOUT SESSION', size: 17, stroke: 4.5)),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
+        ),
+      ),
+    );
+  }
 
-          // ── Hero sprite (tap to edit appearance) ──────────────
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
+  // ── header ───────────────────────────────────────────────────────────
+  Widget _header() => Block(
+        color: Rb.hud,
+        edge: Rb.hudEdge,
+        depth: 6,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            if (widget.onBackTap != null) ...[
+              PressBlock(
+                color: const Color(0xFFE2E2E2),
+                edge: const Color(0xFF6B6B6B),
+                depth: 4,
+                radius: 12,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                onTap: widget.onBackTap,
+                child: const Text('◀',
+                    style: TextStyle(
+                        color: Color(0xFF232527),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(width: 10),
+            ],
+            const Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: BlockText('👤 PLAYER PROFILE', size: 20, stroke: 4.5),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  // ── character card: sky-blue rounded square ──────────────────────────
+  Widget _heroCard(String name, int level) {
+    return Block(
+      color: const Color(0xFF8FD0FF),
+      edge: Rb.blueEdge,
+      depth: 8,
+      radius: 24,
+      padding: EdgeInsets.zero,
+      child: SizedBox(
+        height: 330,
+        width: double.infinity,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(21),
+          child: GestureDetector(
             onTap: _editHero,
             child: Stack(
-              clipBehavior: Clip.none,
+              fit: StackFit.expand,
               children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  decoration: BoxDecoration(
-                    color: bgCard,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: green, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                          color       : green.withValues(alpha: 0.4),
-                          blurRadius  : 20,
-                          spreadRadius: 2),
-                    ],
-                  ),
-                  // 286:512 sprite, uniformly scaled by height (190 -> ~106 wide)
-                  child: HeroSprite.fromData(_userData, height: 190),
-                ),
-                // Level badge
-                Positioned(
-                  right: -10,
-                  bottom: -10,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color       : gold,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.5), blurRadius: 8)],
-                    ),
-                    child: Text(
-                      'LV $level',
-                      style: const TextStyle(
-                          color        : Colors.black,
-                          fontWeight   : FontWeight.w900,
-                          fontSize     : 11,
-                          letterSpacing: 1),
+                // pixel-sharp: ~0.5x of the 560px world
+                Padding(
+                  padding: const EdgeInsets.only(top: 14, bottom: 42),
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    clipBehavior: Clip.none,
+                    child: SizedBox(
+                      width: kSpriteWidth,
+                      height: kSpriteHeight + 44,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 0,
+                            top: 44,
+                            width: kSpriteWidth,
+                            height: kSpriteHeight,
+                            child: AvatarPreview.fromData(
+                              _user,
+                              filterQuality: FilterQuality.none,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                // "Tap to edit" hint
-                Positioned(
-                  top: -8,
-                  right: -8,
+                // grass baseplate
+                Align(
+                  alignment: Alignment.bottomCenter,
                   child: Container(
-                    padding: const EdgeInsets.all(6),
+                    height: 38,
                     decoration: const BoxDecoration(
-                      color: green,
-                      shape: BoxShape.circle,
+                      color: Color(0xFF5BBF5B),
+                      border: Border(top: BorderSide(color: Colors.black, width: 3)),
                     ),
-                    child: const Icon(Icons.edit, size: 14, color: Colors.white),
+                    alignment: Alignment.center,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: BlockText(name.toUpperCase(), size: 16, stroke: 4),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 10,
+                  top: 10,
+                  child: Block(
+                    color: Rb.gold,
+                    edge: Rb.goldEdge,
+                    depth: 4,
+                    radius: 10,
+                    gloss: true,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    child: BlockText('⭐ LV $level', size: 13, stroke: 3.5),
+                  ),
+                ),
+                Positioned(
+                  right: 10,
+                  top: 10,
+                  child: PressBlock(
+                    color: Rb.blue,
+                    edge: Rb.blueEdge,
+                    depth: 4,
+                    radius: 10,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    onTap: _editHero,
+                    child: const BlockText('✏️ EDIT HERO', size: 11, stroke: 3),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 22),
-          Text(username,
-              style: const TextStyle(
-                  color        : textMain,
-                  fontSize     : 22,
-                  fontWeight   : FontWeight.bold,
-                  letterSpacing: 1.5)),
-          const SizedBox(height: 4),
-          Text(FirebaseAuth.instance.currentUser?.email ?? '',
-              style: const TextStyle(color: textSub, fontSize: 12)),
-          const SizedBox(height: 16),
-          Column(
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('EXP  $xp / $xpNeeded',
-                      style: const TextStyle(color: textSub, fontSize: 12)),
-                  Text(
-                      '${((xp / xpNeeded) * 100).clamp(0, 100).toStringAsFixed(1)}%',
-                      style: const TextStyle(
-                          color     : green,
-                          fontSize  : 12,
-                          fontWeight: FontWeight.bold)),
-                ],
-              ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value     : (xp / xpNeeded).clamp(0.0, 1.0),
-                  minHeight : 8,
-                  backgroundColor: greenDim,
-                  valueColor: const AlwaysStoppedAnimation<Color>(green),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCombatPowerStrip() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [purple.withValues(alpha: 0.15), bgCard],
-        ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: purple.withValues(alpha: 0.5)),
-        boxShadow: [
-          BoxShadow(color: purple.withValues(alpha: 0.15), blurRadius: 12),
-        ],
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.bolt, color: purple, size: 26),
-          const SizedBox(width: 10),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('COMBAT POWER',
-                  style: TextStyle(color: textSub, fontSize: 10, letterSpacing: 2)),
-              SizedBox(height: 2),
-              Text('HERO STRENGTH RATING',
-                  style: TextStyle(color: textSub, fontSize: 9)),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            _combatPower.toString().replaceAllMapped(
-                RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'),
-                (m) => '${m[1]},'),
-            style: const TextStyle(
-                color        : purple,
-                fontSize     : 28,
-                fontWeight   : FontWeight.w900,
-                letterSpacing: 1),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCurrencyRow({required int coins, required int gems, required int souls}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Row(
-        children: [
-          _currencyChip('💰', '$coins', 'Coins', gold),
-          const SizedBox(width: 8),
-          _currencyChip('💎', '$gems', 'Gems', teal),
-          const SizedBox(width: 8),
-          _currencyChip('🔮', '$souls', 'Souls', purple),
-        ],
-      ),
-    );
-  }
-
-  Widget _currencyChip(String icon, String value, String label, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: BoxDecoration(
-          color       : bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
-        ),
-        child: Column(
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 20)),
-            const SizedBox(height: 4),
-            Text(value,
-                style: TextStyle(
-                    color     : color,
-                    fontWeight: FontWeight.bold,
-                    fontSize  : 14)),
-            Text(label,
-                style: const TextStyle(color: textSub, fontSize: 10)),
-          ],
         ),
       ),
     );
   }
 
-  Widget _buildStatsTab({
-    required double totalKm,
-    required int sessions,
-    required int steps,
-    required int level,
-  }) {
-    final stats = [
-      _SlayerStat('⚔️', 'Attack',
-          desc : 'Gear ATK + Level bonus',
-          value: level * 42 + 480,
-          max  : level * 42 + 2000,
-          color: red),
-      _SlayerStat('🛡️', 'Defense',
-          desc : 'Gear DEF + Stamina',
-          value: level * 28 + 340,
-          max  : level * 28 + 1500,
-          color: teal),
-      _SlayerStat('💨', 'Speed',
-          desc : 'Running pace factor',
-          value: (totalKm * 8).round().clamp(0, 1200),
-          max  : 1200,
-          color: green),
-      _SlayerStat('❤️', 'HP',
-          desc : 'Total health pool',
-          value: level * 200 + 1200,
-          max  : level * 200 + 8000,
-          color: red),
-      _SlayerStat('⚡', 'Stamina',
-          desc : 'Endurance from sessions',
-          value: sessions * 12 + 150,
-          max  : 2000,
-          color: gold),
-      _SlayerStat('✨', 'XP Bonus',
-          desc  : 'Extra XP per run',
-          value : 55,
-          max   : 200,
-          color : purple,
-          suffix: '%'),
-    ];
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Row(children: [
-          _summaryCard('🏃', '${totalKm.toStringAsFixed(1)} km', 'Total Distance', green),
-          const SizedBox(width: 10),
-          _summaryCard('👟', '${(steps / 1000).toStringAsFixed(1)}k', 'Total Steps', teal),
-          const SizedBox(width: 10),
-          _summaryCard('🗓️', '$sessions', 'Sessions', gold),
-        ]),
-        const SizedBox(height: 20),
-        const _SectionHeader(label: 'HERO STATS', icon: Icons.shield),
-        const SizedBox(height: 10),
-        ...stats.map((s) => _buildStatBar(s)),
-      ],
-    );
-  }
-
-  Widget _summaryCard(String icon, String value, String label, Color color) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-        decoration: BoxDecoration(
-          color       : bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Column(
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 22)),
-            const SizedBox(height: 6),
-            Text(value,
-                style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 16)),
-            Text(label,
-                style: const TextStyle(color: textSub, fontSize: 9, letterSpacing: 0.5),
-                textAlign: TextAlign.center),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatBar(_SlayerStat stat) {
-    final ratio = (stat.value / stat.max).clamp(0.0, 1.0);
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
+  // ── EXP rail ─────────────────────────────────────────────────────────
+  Widget _expRail(LevelProgress lv) {
+    return Block(
+      color: Rb.panel,
+      edge: Rb.panelEdge,
+      depth: 6,
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color       : bgCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: stat.color.withValues(alpha: 0.2)),
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Text('${stat.icon}  ${stat.name}',
-                  style: TextStyle(
-                      color     : stat.color,
-                      fontWeight: FontWeight.bold,
-                      fontSize  : 13)),
+              BlockText('LV ${lv.level}', size: 16, stroke: 4, color: Rb.gold),
               const Spacer(),
-              Text('${stat.value}${stat.suffix ?? ''}',
-                  style: TextStyle(
-                      color     : stat.color,
-                      fontWeight: FontWeight.w900,
-                      fontSize  : 16)),
+              BlockText('EXP  ${_fmt(lv.xpIntoLevel)} / ${_fmt(lv.xpNeeded)}',
+                  size: 13, stroke: 3.5),
             ],
           ),
-          const SizedBox(height: 4),
-          Text(stat.desc, style: const TextStyle(color: textSub, fontSize: 10)),
+          const SizedBox(height: 10),
+          _RetroBar(fraction: lv.fraction),
           const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value          : ratio,
-              minHeight      : 6,
-              backgroundColor: stat.color.withValues(alpha: 0.12),
-              valueColor     : AlwaysStoppedAnimation<Color>(stat.color),
+          BlockText(
+            '${_fmt(lv.xpNeeded - lv.xpIntoLevel)} XP TO LEVEL ${lv.level + 1}',
+            size: 10,
+            stroke: 2.5,
+            color: const Color(0xFFB8BDC4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── currency ─────────────────────────────────────────────────────────
+  Widget _currencyRow() {
+    Widget chip(String emoji, Object v, String label, Color c, Color e) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Block(
+              color: c,
+              edge: e,
+              depth: 4,
+              radius: 12,
+              padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+              child: Column(children: [
+                Text(emoji, style: const TextStyle(fontSize: 18)),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(_fmt((v as num).toInt()), size: 16, stroke: 4)),
+                BlockText(label, size: 8, stroke: 2.5),
+              ]),
+            ),
+          ),
+        );
+    return Row(children: [
+      chip('🪙', _user['coins'] ?? 0, 'COINS', const Color(0xFFB8860B), const Color(0xFF5A4305)),
+      chip('💎', _user['gems'] ?? 0, 'MANA CRYSTALS', const Color(0xFF2EC4FF), const Color(0xFF0A6C99)),
+      chip('🔮', _user['heroic_souls'] ?? 0, 'SOULS', const Color(0xFF9B59FF), const Color(0xFF4B2A8A)),
+    ]);
+  }
+
+  // ── tabs ─────────────────────────────────────────────────────────────
+  Widget _tabs() {
+    Widget tab(int i, String label) {
+      final sel = _tab == i;
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: PressBlock(
+            color: sel ? Rb.blue : Rb.panel,
+            edge: sel ? Rb.blueEdge : Rb.panelEdge,
+            depth: 5,
+            radius: 12,
+            forcePressed: sel,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            onTap: () => setState(() => _tab = i),
+            child: Center(child: BlockText(label, size: 13, stroke: 3.5)),
+          ),
+        ),
+      );
+    }
+
+    return Row(children: [tab(0, '📊 STATS'), tab(1, '🏆 RECORDS')]);
+  }
+
+  // ───────────────────────── STATS tab ─────────────────────────
+
+  List<Widget> _statsTab(FitnessStats f) {
+    final km = (_user['total_km'] as num?)?.toDouble() ?? 0;
+    final sessions = (_user['total_sessions'] as num?)?.toInt() ?? 0;
+
+    Widget summary(String emoji, String v, String label, Color c, Color e) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Block(
+              color: c,
+              edge: e,
+              depth: 5,
+              radius: 12,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              child: Column(children: [
+                Text(emoji, style: const TextStyle(fontSize: 20)),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(v, size: 18, stroke: 4)),
+                BlockText(label, size: 9, stroke: 2.5),
+              ]),
+            ),
+          ),
+        );
+
+    return [
+      Row(children: [
+        summary('📍', km.toStringAsFixed(1), 'TOTAL KM', Rb.green, Rb.greenEdge),
+        summary('🎯', '$sessions', 'SESSIONS', Rb.orange, Rb.orangeEdge),
+        summary('⏱️', _duration(f.totalActiveSeconds), 'ACTIVE TIME', Rb.blue, Rb.blueEdge),
+      ]),
+      const SizedBox(height: 14),
+      _module(
+        emoji: '🏃‍♂️',
+        title: 'PACE / AGILITY',
+        rank: _agilityRank(f.avgSpeedKmh),
+        big: f.avgSpeedKmh > 0 ? '${f.avgSpeedKmh.toStringAsFixed(1)} km/h' : '— km/h',
+        bigLabel: 'AVG SPEED (LAST 10 SESSIONS)',
+        fraction: f.agilityFraction,
+        color: const Color(0xFF2EC4FF),
+        edge: const Color(0xFF0A6C99),
+        foot: f.bestSpeedKmh > 0
+            ? '🏅 Best session: ${f.bestSpeedKmh.toStringAsFixed(1)} km/h  •  Goal 15 km/h'
+            : 'Finish a session to set your speed record!',
+      ),
+      const SizedBox(height: 14),
+      _module(
+        emoji: '🔋',
+        title: 'STAMINA POOL',
+        rank: '${f.consistentWeeks} WK CONSISTENT',
+        big: '${_fmt(f.weeklyKcal)} / ${_fmt(f.staminaMax)}',
+        bigLabel: 'KCAL BURNED THIS WEEK (EST.)',
+        fraction: f.staminaMax == 0 ? 0 : (f.weeklyKcal / f.staminaMax).clamp(0.0, 1.0),
+        color: Rb.neon,
+        edge: Rb.greenEdge,
+        foot:
+            '🔥 ${f.weeklyActiveDays}/7 active days  •  ${f.weeklyKm.toStringAsFixed(1)} km  •  Pool grows +250 per consistent week (2+ sessions)',
+      ),
+      const SizedBox(height: 14),
+      _module(
+        emoji: '🛡️',
+        title: 'RECOVERY / ENDURANCE',
+        rank: _enduranceRank(f.enduranceFraction),
+        big: '${f.streakDays}-DAY STREAK',
+        bigLabel: 'ACTIVE RUN STREAK',
+        fraction: f.enduranceFraction,
+        color: Rb.gold,
+        edge: Rb.goldEdge,
+        foot: '📅 ${f.sessions30d} sessions in the last 30 days  •  Keep the streak alive to level up!',
+      ),
+    ];
+  }
+
+  Widget _module({
+    required String emoji,
+    required String title,
+    required String rank,
+    required String big,
+    required String bigLabel,
+    required double fraction,
+    required Color color,
+    required Color edge,
+    required String foot,
+  }) {
+    return Block(
+      color: Rb.panel,
+      edge: Rb.panelEdge,
+      depth: 6,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Block(
+                color: color,
+                edge: edge,
+                depth: 3,
+                radius: 10,
+                padding: EdgeInsets.zero,
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(child: Text(emoji, style: const TextStyle(fontSize: 22))),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: BlockText(title, size: 15, stroke: 4),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Block(
+                color: Rb.slot,
+                edge: Rb.slateEdge,
+                depth: 3,
+                radius: 8,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: BlockText(rank, size: 9, stroke: 2.5, color: color),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: BlockText(big, size: 26, stroke: 5, color: color),
+          ),
+          BlockText(bigLabel, size: 9, stroke: 2.5, color: const Color(0xFFB8BDC4)),
+          const SizedBox(height: 10),
+          _RetroBar(fraction: fraction, color: color, height: 24),
+          const SizedBox(height: 8),
+          Text(
+            foot,
+            style: const TextStyle(
+              color: Color(0xFFB8BDC4),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              height: 1.3,
             ),
           ),
         ],
@@ -594,304 +500,204 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildGearTab() {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const _SectionHeader(label: 'EQUIPPED GEAR', icon: Icons.star),
-        const SizedBox(height: 10),
-        ..._equippedGear.map(_buildGearCard),
-        const SizedBox(height: 12),
-        GestureDetector(
-          onTap: () => Navigator.pushNamed(context, '/equipment'),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            decoration: BoxDecoration(
-              border      : Border.all(color: green),
-              borderRadius: BorderRadius.circular(14),
-              color       : greenDim.withValues(alpha: 0.3),
-            ),
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+  String _agilityRank(double v) {
+    if (v <= 0) return 'UNRANKED';
+    if (v < 4) return 'ROOKIE';
+    if (v < 7) return 'SCOUT';
+    if (v < 10) return 'RANGER';
+    if (v < 13) return 'SPRINTER';
+    return 'ELITE';
+  }
+
+  String _enduranceRank(double f) {
+    if (f <= 0) return 'RESTING';
+    if (f < 0.25) return 'WARMING UP';
+    if (f < 0.5) return 'STEADY';
+    if (f < 0.8) return 'IRON LEGS';
+    return 'UNSTOPPABLE';
+  }
+
+  // ───────────────────────── RECORDS tab ─────────────────────────
+
+  List<Widget> _recordsTab(FitnessStats f) {
+    String pace = '—';
+    if (f.bestPaceSecsPerKm > 0) {
+      final m = f.bestPaceSecsPerKm ~/ 60;
+      final s = f.bestPaceSecsPerKm % 60;
+      pace = "$m'${s.toString().padLeft(2, '0')}\" /km";
+    }
+    final km = (_user['total_km'] as num?)?.toDouble() ?? 0;
+    final sessions = (_user['total_sessions'] as num?)?.toInt() ?? 0;
+    final owned = _user['owned_items'];
+    final bought = owned is List && owned.isNotEmpty;
+    final bestStreak = f.longestStreakDays;
+
+    final records = <(String, String, String, Color, Color)>[
+      ('🏅', 'Longest Run', f.longestRunKm > 0 ? '${f.longestRunKm.toStringAsFixed(2)} km' : '—',
+          Rb.green, Rb.greenEdge),
+      ('⚡', 'Best Pace', pace, const Color(0xFF2EC4FF), const Color(0xFF0A6C99)),
+      ('🔥', 'Longest Streak', '$bestStreak day${bestStreak == 1 ? '' : 's'}', Rb.orange,
+          Rb.orangeEdge),
+      ('🔋', 'Total Active Time', _duration(f.totalActiveSeconds), Rb.gold, Rb.goldEdge),
+    ];
+
+    final ach = <(String, String, bool)>[
+      ('🏃', 'First Mile', km >= 1.6),
+      ('🌟', '5K Hero', km >= 5),
+      ('🏔️', '10K Legend', km >= 10),
+      ('🔥', 'Week Streak', bestStreak >= 7),
+      ('🛒', 'First Buy', bought),
+      ('🦵', 'Iron Legs', sessions >= 10),
+    ];
+
+    return [
+      const BlockText('📈 PERSONAL RECORDS', size: 14, stroke: 3.5),
+      const SizedBox(height: 10),
+      for (final r in records)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Block(
+            color: Rb.panel,
+            edge: Rb.panelEdge,
+            depth: 5,
+            radius: 12,
+            padding: const EdgeInsets.all(10),
+            child: Row(
               children: [
-                Icon(Icons.swap_horiz, color: green),
-                SizedBox(width: 8),
-                Text('MANAGE EQUIPMENT',
-                    style: TextStyle(
-                        color        : green,
-                        fontWeight   : FontWeight.bold,
-                        letterSpacing: 2,
-                        fontSize     : 13)),
+                Block(
+                  color: r.$4,
+                  edge: r.$5,
+                  depth: 3,
+                  radius: 10,
+                  padding: EdgeInsets.zero,
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Center(child: Text(r.$1, style: const TextStyle(fontSize: 21))),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: BlockText(r.$2.toUpperCase(), size: 12, stroke: 3)),
+                BlockText(r.$3, size: 15, stroke: 4, color: r.$4),
               ],
             ),
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildGearCard(Map<String, dynamic> gear) {
-    final rarity = gear['rarity'] as String;
-    final color  = rarityColor[rarity] ?? textSub;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color       : bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withValues(alpha: 0.5)),
-        boxShadow: [BoxShadow(color: color.withValues(alpha: 0.08), blurRadius: 10)],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            Container(
-              width : 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color       : color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withValues(alpha: 0.6)),
-              ),
-              child: Center(child: Text(gear['icon'], style: const TextStyle(fontSize: 26))),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
+      const SizedBox(height: 6),
+      const BlockText('🎖️ ACHIEVEMENTS', size: 14, stroke: 3.5),
+      const SizedBox(height: 10),
+      GridView.count(
+        crossAxisCount: 3,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 1,
+        children: [
+          for (final a in ach)
+            Block(
+              color: a.$3 ? Rb.gold : Rb.panel,
+              edge: a.$3 ? Rb.goldEdge : Rb.panelEdge,
+              depth: 5,
+              radius: 12,
+              padding: const EdgeInsets.all(6),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Text(gear['name'],
-                          style: const TextStyle(
-                              color     : textMain,
-                              fontWeight: FontWeight.bold,
-                              fontSize  : 14)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color       : color.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: color.withValues(alpha: 0.4)),
-                        ),
-                        child: Text(rarity,
-                            style: TextStyle(
-                                color        : color,
-                                fontSize     : 9,
-                                fontWeight   : FontWeight.bold,
-                                letterSpacing: 0.5)),
-                      ),
-                    ],
+                  Opacity(
+                    opacity: a.$3 ? 1 : 0.35,
+                    child: Text(a.$3 ? a.$1 : '🔒', style: const TextStyle(fontSize: 28)),
                   ),
                   const SizedBox(height: 4),
-                  Text(gear['slot'], style: const TextStyle(color: textSub, fontSize: 11)),
-                  const SizedBox(height: 8),
-                  Wrap(spacing: 6, runSpacing: 4, children: _gearStatChips(gear)),
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(a.$2.toUpperCase(),
+                        size: 9,
+                        stroke: 2.5,
+                        color: a.$3 ? Colors.white : const Color(0xFF9AA0A6)),
+                  ),
                 ],
               ),
+            ),
+        ],
+      ),
+    ];
+  }
+
+  // ── helpers ──
+  String _fmt(int n) => n
+      .toString()
+      .replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+
+  String _duration(int secs) {
+    final h = secs ~/ 3600;
+    final m = (secs % 3600) ~/ 60;
+    return h > 0 ? '${h}h ${m}m' : '${m}m';
+  }
+}
+
+/// Thick retro loading bar: hard black outline, segmented fill, no rounding.
+class _RetroBar extends StatelessWidget {
+  final double fraction;
+  final double height;
+  final Color color;
+
+  const _RetroBar({
+    required this.fraction,
+    this.height = 30,
+    this.color = const Color(0xFF39D353),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final f = fraction.clamp(0.0, 1.0);
+    return Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFF15171A),
+        border: Border.all(color: Colors.black, width: 3),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: const [BoxShadow(color: Colors.black, offset: Offset(0, 4), blurRadius: 0)],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(1),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            FractionallySizedBox(
+              alignment: Alignment.centerLeft,
+              widthFactor: f,
+              child: Container(color: color),
+            ),
+            // glossy highlight on the filled part
+            FractionallySizedBox(
+              alignment: Alignment.topLeft,
+              widthFactor: f,
+              heightFactor: 0.32,
+              child: Container(color: Colors.white.withValues(alpha: 0.3)),
+            ),
+            // 10 loading-bar segments
+            Row(
+              children: [
+                for (var i = 0; i < 10; i++)
+                  Expanded(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        border: Border(
+                          right: i == 9
+                              ? BorderSide.none
+                              : BorderSide(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  width: 2),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
       ),
-    );
-  }
-
-  List<Widget> _gearStatChips(Map<String, dynamic> gear) {
-    final chips = <Widget>[];
-    const labels = {
-      'atk'    : ('⚔️ ATK', red),
-      'def'    : ('🛡️ DEF', teal),
-      'spd'    : ('💨 SPD', green),
-      'hp'     : ('❤️ HP',  red),
-      'stam'   : ('⚡ STAM', gold),
-      'xpBonus': ('✨ XP+', purple),
-    };
-    for (final entry in labels.entries) {
-      if (gear.containsKey(entry.key)) {
-        final val   = gear[entry.key];
-        final label = entry.value.$1;
-        final color = entry.value.$2;
-        chips.add(Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-          decoration: BoxDecoration(
-            color       : color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Text('$label +$val',
-              style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w600)),
-        ));
-      }
-    }
-    return chips;
-  }
-
-  Widget _buildRecordsTab() {
-    final longestRunKm  = (_userData?['longest_run_km']   ?? 0.0) as double;
-    final bestPaceSecs  = (_userData?['best_pace_secs']   ?? 0)   as int;
-    final longestStreak = (_userData?['longest_streak']   ?? 0)   as int;
-    final coinsEarned   = (_userData?['coins']            ?? 0)   as int;
-
-    String paceLabel = '—';
-    if (bestPaceSecs > 0) {
-      final m = bestPaceSecs ~/ 60;
-      final s = bestPaceSecs  % 60;
-      paceLabel = '$m:${s.toString().padLeft(2, '0')} /km';
-    }
-
-    final longestRunLabel  = longestRunKm  > 0 ? '${longestRunKm.toStringAsFixed(1)} km' : '—';
-    final longestStreakLabel = '$longestStreak day${longestStreak == 1 ? '' : 's'}';
-    final coinsLabel       = coinsEarned.toString().replaceAllMapped(
-        RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
-
-    final records = [
-      _Record('🏆', 'Longest Run',    longestRunLabel,   green),
-      _Record('⚡', 'Best Pace',       paceLabel,         teal),
-      _Record('🔥', 'Longest Streak', longestStreakLabel, gold),
-      _Record('💰', 'Coins Earned',   coinsLabel,        gold),
-    ];
-
-    final totalKm  = (_userData?['total_km']       ?? 0.0) as double;
-    final sessions = (_userData?['total_sessions'] ?? 0)   as int;
-
-    final ach = [
-      ('🏃', 'First Mile',  totalKm >= 1.6),
-      ('🌟', '5K Hero',     totalKm >= 5.0),
-      ('💪', '10K Legend',  totalKm >= 10.0),
-      ('🔥', 'Week Streak', longestStreak >= 7),
-      ('👑', 'Gacha King',  false),
-      ('⚔️', 'Survivor',    sessions >= 10),
-    ];
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const _SectionHeader(label: 'PERSONAL RECORDS', icon: Icons.emoji_events),
-        const SizedBox(height: 10),
-        ...records.map((r) => _buildRecordRow(r)),
-        const SizedBox(height: 20),
-        const _SectionHeader(label: 'ACHIEVEMENTS', icon: Icons.military_tech),
-        const SizedBox(height: 10),
-        _buildAchievementGrid(ach),
-      ],
-    );
-  }
-
-  Widget _buildRecordRow(_Record r) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color       : bgCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: r.color.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Text(r.icon, style: const TextStyle(fontSize: 22)),
-          const SizedBox(width: 14),
-          Text(r.label, style: const TextStyle(color: textSub, fontSize: 13)),
-          const Spacer(),
-          Text(r.value,
-              style: TextStyle(
-                  color     : r.color,
-                  fontWeight: FontWeight.bold,
-                  fontSize  : 16)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAchievementGrid(List<(String, String, bool)> ach) {
-    return GridView.builder(
-      shrinkWrap: true,
-      physics   : const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount  : 3,
-          crossAxisSpacing: 10,
-          mainAxisSpacing : 10,
-          childAspectRatio: 1),
-      itemCount  : ach.length,
-      itemBuilder: (_, i) {
-        final (icon, label, unlocked) = ach[i];
-        return Container(
-          decoration: BoxDecoration(
-            color       : unlocked ? bgCard : bgPanel,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: unlocked ? gold.withValues(alpha: 0.5) : greenDim),
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(icon,
-                  style: TextStyle(
-                      fontSize: 28,
-                      color: unlocked ? null : const Color(0xFF2A2A2A))),
-              const SizedBox(height: 6),
-              Text(label,
-                  style: TextStyle(
-                      color     : unlocked ? gold : textSub,
-                      fontSize  : 10,
-                      fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center),
-              if (!unlocked)
-                const Icon(Icons.lock, color: textSub, size: 12),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _SlayerStat {
-  final String  icon;
-  final String  name;
-  final String  desc;
-  final int     value;
-  final int     max;
-  final Color   color;
-  final String? suffix;
-
-  const _SlayerStat(this.icon, this.name,
-      {required this.desc,
-      required this.value,
-      required this.max,
-      required this.color,
-      this.suffix});
-}
-
-class _Record {
-  final String icon;
-  final String label;
-  final String value;
-  final Color  color;
-  const _Record(this.icon, this.label, this.value, this.color);
-}
-
-class _SectionHeader extends StatelessWidget {
-  final String   label;
-  final IconData icon;
-
-  const _SectionHeader({required this.label, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, color: AppColors.blue, size: 16),
-        const SizedBox(width: 8),
-        Text(label,
-            style: const TextStyle(
-                color        : AppColors.blue,
-                fontSize     : 11,
-                fontWeight   : FontWeight.bold,
-                letterSpacing: 3)),
-        const SizedBox(width: 12),
-        Expanded(child: Container(height: 1, color: AppColors.borderDim)),
-      ],
     );
   }
 }

@@ -5,6 +5,7 @@ import '../models/activity_model.dart';
 import 'avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import 'avatar_preview.dart';
 import 'block_ui.dart';
+import 'tutorial_keys.dart';
 
 // ═════════════════════════════════════════════════════════════════
 //  Roblox-style "Start Session" view
@@ -171,6 +172,7 @@ class PreRunView extends StatelessWidget {
     required double progress,
   }) {
     return Block(
+      key: TutorialKeys.milestone,
       color: _panel,
       edge: _panelEdge,
       depth: 6,
@@ -288,6 +290,7 @@ class PreRunView extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Container(
+            key: TutorialKeys.hero,
             width: w,
             height: h,
             decoration: BoxDecoration(

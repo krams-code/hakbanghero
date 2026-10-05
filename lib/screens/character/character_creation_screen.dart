@@ -141,7 +141,11 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
       await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
-          .update(profile.toFirestore());
+          .update({
+        ...profile.toFirestore(),
+        // brand-new hero -> show the onboarding tutorial once
+        if (!widget.isEditMode) 'tutorial_done': false,
+      });
 
       if (!mounted) return;
 

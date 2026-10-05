@@ -45,5 +45,6 @@ flutter:
     - assets/images/character/hair/
     - assets/images/character/face/
     - assets/images/character/clothes/
+    - assets/images/guide/
     - assets/fonts/
     - assets/animations/

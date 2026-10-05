@@ -20,7 +20,7 @@ import '../../widgets/block_ui.dart';
 
 // ───────────────────────── Catalog ─────────────────────────
 
-enum ShopCategory { hair, clothes, faces, backgrounds }
+enum ShopCategory { hair, colors, clothes, faces, backgrounds }
 
 class ShopItem {
   final String id;          // must match HairStyle / FaceExpression / clothes / background ids
@@ -30,6 +30,8 @@ class ShopItem {
   final double unlockKm;    // > 0 = locked until this many total km
   final String? asset;      // PNG key (hair / clothes / faces)
   final String emoji;       // fallback icon when there's no art yet
+  final String? colorHex;   // hair-colour items: '#RRGGBB'
+  final String? slot;       // Gear slot: weapon | armor | boots | ring
 
   const ShopItem({
     required this.id,
@@ -39,13 +41,18 @@ class ShopItem {
     this.unlockKm = 0,
     this.asset,
     this.emoji = '📦',
+    this.colorHex,
+    this.slot,
   });
 
   /// Free and not milestone-gated = everyone owns it from the start.
   bool get isFree => price == 0 && unlockKm == 0;
 
   /// Can be shown on the avatar (has art, or is a background).
-  bool get equippable => category == ShopCategory.backgrounds || asset != null;
+  bool get equippable =>
+      category == ShopCategory.backgrounds ||
+      category == ShopCategory.colors ||
+      asset != null;
 }
 
 /// Only items whose art really exists in assets/. Add a line to add an item.
@@ -62,12 +69,28 @@ const List<ShopItem> kShopCatalog = [
   ShopItem(id: 'long_flowing', category: ShopCategory.hair, name: 'Long & Flowing',
       price: 250, unlockKm: 25, asset: '$kHairDir/hair_07_long_flowing.png', emoji: '💇'),
 
+  // 🎨 HAIR COLOURS (tint over any hair style)
+  ShopItem(id: 'hc_1A1A1A', category: ShopCategory.colors, name: 'Jet Black',
+      colorHex: '#1A1A1A', emoji: '🎨'),
+  ShopItem(id: 'hc_3B2415', category: ShopCategory.colors, name: 'Espresso',
+      colorHex: '#3B2415', emoji: '🎨'),
+  ShopItem(id: 'hc_8B5A2B', category: ShopCategory.colors, name: 'Chestnut',
+      price: 60, colorHex: '#8B5A2B', emoji: '🎨'),
+  ShopItem(id: 'hc_4A4A4A', category: ShopCategory.colors, name: 'Ash Gray',
+      price: 60, colorHex: '#4A4A4A', emoji: '🎨'),
+  ShopItem(id: 'hc_D2A679', category: ShopCategory.colors, name: 'Sandy',
+      price: 80, colorHex: '#D2A679', emoji: '🎨'),
+  ShopItem(id: 'hc_E8C468', category: ShopCategory.colors, name: 'Golden Blonde',
+      price: 100, colorHex: '#E8C468', emoji: '🎨'),
+  ShopItem(id: 'hc_B33A1E', category: ShopCategory.colors, name: 'Legendary Crimson',
+      price: 200, colorHex: '#B33A1E', emoji: '🎨'),
+
   // 🎽 CLOTHES
   ShopItem(id: 'outfit_01', category: ShopCategory.clothes, name: 'Training Set',
-      asset: '$kClothesDir/outfit_01.png', emoji: '🎽'),
+      asset: '$kClothesDir/outfit_01.png', emoji: '🎽', slot: 'armor'),
   // Milestone reward with no art yet (shows as locked / "art coming soon")
   ShopItem(id: 'slayer_boots', category: ShopCategory.clothes, name: 'Slayer Iron Boots',
-      unlockKm: 15, emoji: '🥾'),
+      unlockKm: 15, emoji: '🥾', slot: 'boots'),
 
   // 🎭 FACES
   ShopItem(id: 'neutral', category: ShopCategory.faces, name: 'Neutral',
@@ -85,6 +108,7 @@ const List<ShopItem> kShopCatalog = [
 
 const List<(ShopCategory, String, String)> _cats = [
   (ShopCategory.hair, '💇', 'HAIR'),
+  (ShopCategory.colors, '🎨', 'COLORS'),
   (ShopCategory.clothes, '🎽', 'CLOTHES'),
   (ShopCategory.faces, '🎭', 'FACES'),
   (ShopCategory.backgrounds, '🌌', 'BACKGROUNDS'),
@@ -155,8 +179,8 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   ShopCategory _cat = ShopCategory.hair;
 
   // Draft look = what the live preview shows (not saved until purchase).
-  bool _init = false;
-  String _hair = '', _face = '', _clothes = '', _bg = '';
+  String _sig = '';
+  String _hair = '', _face = '', _clothes = '', _bg = '', _hairColor = '';
 
   bool _drawerOpen = true;
   bool _buying = false;
@@ -165,7 +189,12 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
 
   ShopItem? _find(ShopCategory c, String id) {
     for (final i in kShopCatalog) {
-      if (i.category == c && i.id == id) return i;
+      if (i.category != c) continue;
+      if (c == ShopCategory.colors) {
+        if (i.colorHex?.toUpperCase() == id.toUpperCase()) return i;
+      } else if (i.id == id) {
+        return i;
+      }
     }
     return null;
   }
@@ -173,6 +202,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   String _draftOf(ShopCategory c) {
     switch (c) {
       case ShopCategory.hair:        return _hair;
+      case ShopCategory.colors:      return _hairColor;
       case ShopCategory.clothes:     return _clothes;
       case ShopCategory.faces:       return _face;
       case ShopCategory.backgrounds: return _bg;
@@ -182,13 +212,19 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   void _setDraft(ShopCategory c, String id) {
     switch (c) {
       case ShopCategory.hair:        _hair = id; break;
+      case ShopCategory.colors:      _hairColor = id; break;
       case ShopCategory.clothes:     _clothes = id; break;
       case ShopCategory.faces:       _face = id; break;
       case ShopCategory.backgrounds: _bg = id; break;
     }
   }
 
-  bool _isOwned(ShopItem i, _ShopData s) => i.isFree || s.owned.contains(i.id);
+  bool _isOwned(ShopItem i, _ShopData s) =>
+      i.isFree ||
+      s.owned.contains(i.id) ||
+      // the colour you already wear is yours
+      (i.category == ShopCategory.colors &&
+          i.colorHex?.toUpperCase() == s.hairColor.toUpperCase());
   bool _isLocked(ShopItem i, _ShopData s) => !_isOwned(i, s) && i.unlockKm > s.totalKm;
 
   List<ShopItem> _draftItems() {
@@ -207,10 +243,23 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
       .fold<int>(0, (sum, i) => sum + i.price);
 
   bool _changed(_ShopData s) =>
-      _hair != s.hair || _face != s.face || _clothes != s.clothes || _bg != s.bg;
+      _hair != s.hair ||
+      _face != s.face ||
+      _clothes != s.clothes ||
+      _bg != s.bg ||
+      _hairColor.toUpperCase() != s.hairColor.toUpperCase();
 
-  String _kmText(double km) =>
-      km == km.roundToDouble() ? km.toInt().toString() : km.toStringAsFixed(1);
+  /// A previewed item the player can't unlock yet (distance-gated).
+  ShopItem? _lockedInDraft(_ShopData s) {
+    for (final i in _draftItems()) {
+      if (_isLocked(i, s)) return i;
+    }
+    return null;
+  }
+
+  String _kmText(double km) => km.toStringAsFixed(1); // e.g. 15.0
+
+  Color _hex(String h) => Color(int.parse('FF${h.replaceAll('#', '')}', radix: 16));
 
   String _fmt(int n) => n
       .toString()
@@ -224,20 +273,24 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   }
 
   void _onItemTap(ShopItem item, _ShopData s) {
-    if (_isLocked(item, s)) {
-      _snack('🔒 Run ${_kmText(item.unlockKm)} Total KM to unlock ${item.name}');
+    if (!item.equippable) {
+      _snack(_isLocked(item, s)
+          ? '🔒 Run ${_kmText(item.unlockKm)} Total KM to unlock ${item.name}'
+          : 'Art for ${item.name} is coming soon!');
       return;
     }
-    if (!item.equippable) {
-      _snack('Art for ${item.name} is coming soon!');
-      return;
+    // Try-on: unowned and even distance-locked items go straight onto the
+    // live mannequin. Nothing is bought until BUY EQUIPPED ITEM is tapped.
+    if (_isLocked(item, s)) {
+      _snack('👀 Trying on ${item.name} — run ${_kmText(item.unlockKm)} Total KM to unlock it');
     }
     setState(() {
       // tapping equipped clothes again takes them off
       if (item.category == ShopCategory.clothes && _clothes == item.id) {
         _clothes = '';
       } else {
-        _setDraft(item.category, item.id);
+        _setDraft(item.category,
+            item.category == ShopCategory.colors ? item.colorHex! : item.id);
       }
     });
   }
@@ -265,6 +318,9 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
         if (newOwned.isNotEmpty) updates['owned_items'] = FieldValue.arrayUnion(newOwned);
         if (_hair != fresh.hair) updates['hair_style'] = _hair;
         if (_face != fresh.face) updates['face_expression'] = _face;
+        if (_hairColor.toUpperCase() != fresh.hairColor.toUpperCase()) {
+          updates['hair_color'] = _hairColor;
+        }
         if (_clothes != fresh.clothes) {
           updates['equipped_clothes'] = _clothes.isEmpty ? <String>[] : [_clothes];
         }
@@ -306,12 +362,16 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
             }
             final s = _ShopData.from(snap.data!.data() ?? {});
 
-            if (!_init) {
+            // (Re)load the draft whenever the SAVED look changes — first load,
+            // after a purchase, or after equipping in the Gear screen.
+            final sig = '${s.hair}|${s.face}|${s.clothes}|${s.bg}|${s.hairColor}';
+            if (sig != _sig) {
+              _sig = sig;
               _hair = s.hair;
               _face = s.face;
               _clothes = s.clothes;
               _bg = s.bg;
-              _init = true;
+              _hairColor = s.hairColor;
             }
 
             return Column(
@@ -340,13 +400,14 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
 
   Widget _buildHeader(_ShopData s) {
     return Block(
-      color: Rb.panel,
-      edge: Rb.panelEdge,
+      color: Rb.hud,
+      edge: Rb.hudEdge,
       depth: 6,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
           const Expanded(
+            flex: 4,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
@@ -354,14 +415,25 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
             ),
           ),
           const SizedBox(width: 8),
-          Block(
-            color: Rb.blue,
-            edge: Rb.blueEdge,
-            depth: 4,
-            radius: 12,
-            gloss: true,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            child: BlockText('💎 ${_fmt(s.gems)} GEMS', size: 13, stroke: 3.5),
+          // glossy Mana Crystal balance (users/{uid}.gems)
+          Expanded(
+            flex: 6,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: Block(
+              color: Rb.blue,
+              edge: Rb.blueEdge,
+              depth: 4,
+              radius: 12,
+              gloss: true,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: BlockText('💎 ${_fmt(s.gems)} MANA CRYSTALS',
+                      size: 12, stroke: 3.5),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -409,14 +481,14 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     final items = kShopCatalog.where((i) => i.category == _cat).toList();
 
     return LayoutBuilder(builder: (context, c) {
-      final cols = c.maxWidth >= 600 ? 3 : 2;
+      const cols = 3;
       return GridView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: cols,
-          crossAxisSpacing: 12,
+          crossAxisSpacing: 10,
           mainAxisSpacing: 4,
-          childAspectRatio: 0.82,
+          childAspectRatio: 0.66,
         ),
         itemCount: items.length,
         itemBuilder: (context, i) => _buildTile(items[i], s),
@@ -427,15 +499,17 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   Widget _buildTile(ShopItem item, _ShopData s) {
     final owned = _isOwned(item, s);
     final locked = _isLocked(item, s);
-    final equipped = _draftOf(item.category) == item.id;
+    final equipped = item.category == ShopCategory.colors
+        ? _hairColor.toUpperCase() == item.colorHex?.toUpperCase()
+        : _draftOf(item.category) == item.id;
 
     return PressBlock(
       color: equipped ? const Color(0xFF1E4A66) : Rb.slate,
-      edge: equipped ? Rb.blueEdge : Rb.slateEdge,
+      edge: equipped ? Rb.blueEdge : Colors.black,
       depth: 6,
       radius: 14,
       forcePressed: equipped,
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.all(6),
       onTap: () => _onItemTap(item, s),
       child: Column(
         children: [
@@ -465,7 +539,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
           const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: BlockText(item.name, size: 12, stroke: 3, maxLines: 1),
+            child: BlockText(item.name, size: 11, stroke: 3, maxLines: 1),
           ),
           const SizedBox(height: 6),
           _tag(item, owned: owned, locked: locked, equipped: equipped),
@@ -487,7 +561,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     } else if (item.price == 0) {
       fill = Rb.neon; edge = Rb.greenEdge; text = 'FREE';
     } else {
-      fill = Rb.green; edge = Rb.greenEdge; text = 'BUY 💎 ${item.price}';
+      fill = Rb.green; edge = Rb.greenEdge; text = '💎 ${item.price}';
     }
     return Block(
       color: fill,
@@ -500,7 +574,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
         child: Center(
           child: FittedBox(
             fit: BoxFit.scaleDown,
-            child: BlockText(text, size: 12, stroke: 3),
+            child: BlockText(text, size: 12, stroke: 3.5),
           ),
         ),
       ),
@@ -509,17 +583,17 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
 
   Widget _lockMask(ShopItem item) {
     return Container(
-      color: Colors.black.withValues(alpha: 0.68),
-      padding: const EdgeInsets.all(6),
+      color: const Color(0xEE3A3D40),
+      padding: const EdgeInsets.all(4),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.lock, color: Colors.white, size: 26),
+            const Icon(Icons.lock, color: Colors.white, size: 24),
             const SizedBox(height: 4),
             BlockText(
-              'Lock: Run ${_kmText(item.unlockKm)} Total KM to Unlock',
-              size: 10,
+              'Run ${_kmText(item.unlockKm)} Total KM to Unlock',
+              size: 9,
               stroke: 3,
               align: TextAlign.center,
             ),
@@ -534,16 +608,30 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     if (item.category == ShopCategory.backgrounds) {
       return BlockBackground(id: item.id);
     }
-    if (item.asset == null) {
+    if (item.asset == null && item.category != ShopCategory.colors) {
       return Center(child: Text(item.emoji, style: const TextStyle(fontSize: 44)));
     }
     switch (item.category) {
+      case ShopCategory.colors:
+        return Center(
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: _hex(item.colorHex!),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.black, width: 3),
+              boxShadow: const [BoxShadow(color: Colors.black54, offset: Offset(0, 4))],
+            ),
+            child: const Center(child: Text('💇', style: TextStyle(fontSize: 24))),
+          ),
+        );
       case ShopCategory.hair:
-        return _CropImage(path: item.asset!, focusX: 141, focusY: 112, zoom: 1.0);
+        return ShopCropImage(path: item.asset!, focusX: 141, focusY: 112, zoom: 1.0);
       case ShopCategory.faces:
-        return _CropImage(path: item.asset!, focusX: 142.5, focusY: 178, zoom: 1.9);
+        return ShopCropImage(path: item.asset!, focusX: 142.5, focusY: 178, zoom: 1.9);
       default: // clothes
-        return _CropImage(path: item.asset!, focusX: 142.5, focusY: 252, zoom: 0.55);
+        return ShopCropImage(path: item.asset!, focusX: 142.5, focusY: 252, zoom: 0.55);
     }
   }
 
@@ -558,22 +646,27 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     // ── purchase button state ──
     String label;
     String? sub;
-    Color fill = Rb.neon, edge = Rb.greenEdge;
+    Color fill = Rb.gold, edge = Rb.goldEdge;
     VoidCallback? onTap;
     if (_buying) {
       label = 'PROCESSING…';
       fill = Rb.panel; edge = Rb.panelEdge;
+    } else if (_lockedInDraft(s) != null) {
+      final l = _lockedInDraft(s)!;
+      label = '🔒 UNLOCK AT ${_kmText(l.unlockKm)} KM';
+      sub = 'Remove ${l.name} to buy the rest';
+      fill = const Color(0xFF4A4F55); edge = Rb.panelEdge;
     } else if (!changed) {
-      label = '✔ ALREADY EQUIPPED';
+      label = '👀 TAP ITEMS TO TRY THEM ON';
       fill = Rb.panel; edge = Rb.panelEdge;
     } else if (cost == 0) {
-      label = '✅ SAVE LOOK';
-      onTap = () => _purchase(uid);
+      label = '🎒 OWNED — EQUIP IN GEAR';
+      fill = Rb.panel; edge = Rb.panelEdge;
     } else if (broke) {
       label = 'NEED ${_fmt(cost - s.gems)} MORE 💎';
       fill = Rb.red; edge = Rb.redEdge;
     } else {
-      label = '🛒 PURCHASE EQUIPPED';
+      label = '🛒 BUY EQUIPPED ITEM';
       sub = '💎 ${_fmt(cost)}';
       onTap = () => _purchase(uid);
     }
@@ -645,7 +738,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
                     Center(child: BlockText(label, size: 20, stroke: 4.5)),
                     if (sub != null) ...[
                       const SizedBox(height: 2),
-                      Center(child: BlockText(sub, size: 13, stroke: 3, color: Rb.gold)),
+                      Center(child: BlockText(sub, size: 13, stroke: 3, color: Colors.white)),
                     ],
                   ],
                 ),
@@ -696,7 +789,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
                             hairStyle: _hair,
                             activeGear: _clothes,
                             skinTone: s.skinTone,
-                            hairColor: s.hairColor,
+                            hairColor: _hairColor,
                             // drawn at ~1/3 scale, so filter instead of dropping pixels
                             filterQuality: FilterQuality.medium,
                           ),
@@ -793,11 +886,11 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
 /// Shows part of a 286x512 layer PNG: centres on (focusX, focusY) in canvas
 /// pixels, scaled by `zoom` relative to the box width. Used so a hair/face/
 /// outfit PNG (mostly transparent canvas) fills its item box nicely.
-class _CropImage extends StatelessWidget {
+class ShopCropImage extends StatelessWidget {
   final String path;
   final double focusX, focusY, zoom;
 
-  const _CropImage({
+  const ShopCropImage({
     required this.path,
     required this.focusX,
     required this.focusY,

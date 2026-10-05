@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+
 import '../../models/activity_model.dart';
-import '../../theme/app_colors.dart';
+import '../../widgets/block_ui.dart';
 
-
+/// Roblox block-style Activity log.
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
 
@@ -13,727 +14,426 @@ class ActivityScreen extends StatefulWidget {
   State<ActivityScreen> createState() => _ActivityScreenState();
 }
 
-class _ActivityScreenState extends State<ActivityScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _entryCtrl;
-  late Animation<double> _entryFade;
-  late Animation<Offset> _entrySlide;
-
-  ActivityType? _filterType;
-
-  @override
-  void initState() {
-    super.initState();
-    _entryCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600))
-      ..forward();
-    _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
-    _entrySlide = Tween<Offset>(
-      begin: const Offset(0, 0.05),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
-  }
-
-  @override
-  void dispose() {
-    _entryCtrl.dispose();
-    super.dispose();
-  }
+class _ActivityScreenState extends State<ActivityScreen> {
+  ActivityType? _filter;
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
+  static (Color, Color) _colors(ActivityType t) {
+    switch (t) {
+      case ActivityType.walk:
+        return (const Color(0xFF7EE08A), const Color(0xFF2F7A3B));
+      case ActivityType.jog:
+        return (const Color(0xFF2EC4FF), const Color(0xFF0A6C99));
+      case ActivityType.run:
+        return (Rb.orange, Rb.orangeEdge);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final uid = _uid;
     return Scaffold(
-      backgroundColor: AppColors.bgDeep,
-      body: FadeTransition(
-        opacity: _entryFade,
-        child: SlideTransition(
-          position: _entrySlide,
-          child: CustomScrollView(
-            slivers: [
-              SliverToBoxAdapter(child: _buildHeader()),
-              SliverToBoxAdapter(child: _buildFilterBar()),
-              SliverToBoxAdapter(child: _buildStatsSummary()),
-              _buildActivityList(),
-              const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 12,
-        left: 16,
-        right: 16,
-        bottom: 12,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.bgPanel,
-            AppColors.bgDeep.withOpacity(0),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.bolt, color: AppColors.blue, size: 22),
-          const SizedBox(width: 10),
-          const Text(
-            'ACTIVITY LOG',
-            style: TextStyle(
-              color: AppColors.textMain,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.blue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.blue.withOpacity(0.3)),
-            ),
-            child: const Text(
-              'ALL TIME',
-              style: TextStyle(
-                color: AppColors.blue,
-                fontSize: 9,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1,
+      backgroundColor: Rb.bg,
+      body: SafeArea(
+        bottom: false,
+        child: uid == null
+            ? const Center(child: BlockText('SIGN IN TO SEE ACTIVITY', size: 16))
+            : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                stream: FirebaseFirestore.instance
+                    .collection('users')
+                    .doc(uid)
+                    .collection('activities')
+                    .orderBy('startTime', descending: true)
+                    .snapshots(),
+                builder: (context, snap) {
+                  if (snap.hasError) {
+                    return _message('⚠️', 'COULD NOT LOAD ACTIVITY',
+                        'Check your connection and try again.');
+                  }
+                  if (!snap.hasData) {
+                    return const Center(
+                        child: CircularProgressIndicator(color: Rb.gold));
+                  }
+                  final all = <ActivitySession>[];
+                  for (final d in snap.data!.docs) {
+                    try {
+                      all.add(ActivitySession.fromFirestore(d));
+                    } catch (_) {}
+                  }
+                  return _content(all);
+                },
               ),
-            ),
-          ),
-        ],
       ),
     );
   }
 
-  Widget _buildFilterBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
+  Widget _content(List<ActivitySession> all) {
+    final list =
+        _filter == null ? all : all.where((s) => s.type == _filter).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+      children: [
+        _header(all.length),
+        const SizedBox(height: 14),
+        _filters(),
+        const SizedBox(height: 14),
+        if (all.isEmpty)
+          _message('🏃', 'NO RUNS YET', 'Hit RUN to log your first session!')
+        else ...[
+          _summary(list),
+          const SizedBox(height: 14),
+          _chart(list),
+          const SizedBox(height: 14),
+          if (list.isEmpty)
+            _message('🔍', 'NOTHING HERE', 'No sessions match this filter.')
+          else
+            ..._history(list),
+        ],
+      ],
+    );
+  }
+
+  // ── Header ────────────────────────────────────────────────────────────
+  Widget _header(int count) => Block(
+        color: Rb.hud,
+        edge: Rb.hudEdge,
+        depth: 6,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
           children: [
-            _FilterChip(
-              label: 'ALL',
-              color: AppColors.textSub,
-              isSelected: _filterType == null,
-              onTap: () => setState(() => _filterType = null),
+            const Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: BlockText('⚡ ACTIVITY LOG', size: 20, stroke: 4.5),
+              ),
             ),
             const SizedBox(width: 8),
-            ...ActivityType.values.map((t) {
-              Color c;
-              switch (t) {
-                case ActivityType.walk: c = AppColors.cyan; break;
-                case ActivityType.jog:  c = AppColors.gold; break;
-                case ActivityType.run:  c = AppColors.blue; break;
-              }
-              return Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: _FilterChip(
-                  label: '${t.emoji} ${t.label.toUpperCase()}',
-                  color: c,
-                  isSelected: _filterType == t,
-                  onTap: () => setState(() => _filterType = t),
-                ),
-              );
-            }),
+            Block(
+              color: Rb.blue,
+              edge: Rb.blueEdge,
+              depth: 4,
+              radius: 10,
+              gloss: true,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: BlockText('$count ALL TIME', size: 11, stroke: 3),
+            ),
           ],
         ),
-      ),
-    );
-  }
+      );
 
-  Widget _buildStatsSummary() {
-    if (_uid == null) return const SizedBox.shrink();
-
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(_uid)
-          .collection('activities')
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const SizedBox(height: 8);
-
-        final sessions = snapshot.data!.docs
-            .map((d) => ActivitySession.fromFirestore(d))
-            .toList();
-
-        final totalKm = sessions.fold<double>(
-            0, (sum, s) => sum + s.distanceKm);
-        final totalTime = sessions.fold<int>(
-            0, (sum, s) => sum + s.durationSeconds);
-        final totalRuns = sessions
-            .where((s) => s.type == ActivityType.run)
-            .length;
-        final totalWalks = sessions
-            .where((s) => s.type == ActivityType.walk)
-            .length;
-        final totalJogs = sessions
-            .where((s) => s.type == ActivityType.jog)
-            .length;
-
-        final hours = totalTime ~/ 3600;
-        final minutes = (totalTime % 3600) ~/ 60;
-        final timeStr = hours > 0 ? '${hours}h ${minutes}m' : '${minutes}m';
-
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  _SummaryCard(
-                    label: 'TOTAL KM',
-                    value: totalKm.toStringAsFixed(1),
-                    unit: 'km',
-                    color: AppColors.blue,
-                    icon: Icons.route,
-                  ),
-                  const SizedBox(width: 10),
-                  _SummaryCard(
-                    label: 'ACTIVE TIME',
-                    value: timeStr,
-                    unit: 'total',
-                    color: AppColors.cyan,
-                    icon: Icons.timer,
-                  ),
-                  const SizedBox(width: 10),
-                  _SummaryCard(
-                    label: 'SESSIONS',
-                    value: '${sessions.length}',
-                    unit: 'total',
-                    color: AppColors.gold,
-                    icon: Icons.flag,
-                  ),
-                ],
+  // ── Filters ───────────────────────────────────────────────────────────
+  Widget _filters() {
+    Widget chip(String label, ActivityType? t, Color c, Color e) {
+      final sel = _filter == t;
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 3),
+          child: PressBlock(
+            color: sel ? c : Rb.panel,
+            edge: sel ? e : Rb.panelEdge,
+            depth: 5,
+            radius: 12,
+            forcePressed: sel,
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            onTap: () => setState(() => _filter = t),
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: BlockText(label, size: 12, stroke: 3),
               ),
-              const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.bgCard,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.borderDim),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _TypeCount(emoji: '🚶', label: 'Walks', count: totalWalks,
-                        color: AppColors.cyan),
-                    _TypeCount(emoji: '🏃', label: 'Jogs', count: totalJogs,
-                        color: AppColors.gold),
-                    _TypeCount(emoji: '⚡', label: 'Runs', count: totalRuns,
-                        color: AppColors.blue),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildActivityList() {
-    if (_uid == null) {
-      return const SliverToBoxAdapter(
-        child: Center(
-          child: Text('Not logged in',
-              style: TextStyle(color: AppColors.textSub)),
         ),
       );
     }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('users')
-          .doc(_uid)
-          .collection('activities')
-          .orderBy('startTime', descending: true)
-          .snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.only(top: 40),
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.blue),
-              ),
-            ),
-          );
-        }
-
-        if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return SliverToBoxAdapter(child: _buildEmpty());
-        }
-
-        var sessions = snapshot.data!.docs
-            .map((d) => ActivitySession.fromFirestore(d))
-            .toList();
-
-        if (_filterType != null) {
-          sessions = sessions
-              .where((s) => s.type == _filterType)
-              .toList();
-        }
-
-        if (sessions.isEmpty) {
-          return SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(40),
-              child: Center(
-                child: Text(
-                  'No ${_filterType?.label ?? ''} sessions yet.',
-                  style: const TextStyle(color: AppColors.textSub, fontSize: 13),
-                ),
-              ),
-            ),
-          );
-        }
-
-        final grouped = <String, List<ActivitySession>>{};
-        for (final s in sessions) {
-          final key = DateFormat('MMMM d, yyyy').format(s.startTime);
-          grouped.putIfAbsent(key, () => []).add(s);
-        }
-
-        return SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final keys = grouped.keys.toList();
-
-              final items = <Widget>[];
-              for (final key in keys) {
-                items.add(_DateHeader(date: key));
-                for (final session in grouped[key]!) {
-                  items.add(_ActivityCard(session: session));
-                }
-              }
-              if (index >= items.length) return null;
-              return items[index];
-            },
-            childCount: () {
-              int count = 0;
-              for (final key in grouped.keys) {
-                count += 1 + grouped[key]!.length;
-              }
-              return count;
-            }(),
-          ),
-        );
-      },
-    );
+    final w = _colors(ActivityType.walk);
+    final j = _colors(ActivityType.jog);
+    final r = _colors(ActivityType.run);
+    return Row(children: [
+      chip('ALL', null, Rb.gold, Rb.goldEdge),
+      chip('🚶 WALK', ActivityType.walk, w.$1, w.$2),
+      chip('⚡ JOG', ActivityType.jog, j.$1, j.$2),
+      chip('🏃 RUN', ActivityType.run, r.$1, r.$2),
+    ]);
   }
 
-  Widget _buildEmpty() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 40, 24, 0),
-      child: Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.borderDim),
-        ),
-        child: Column(
+  // ── Summary ───────────────────────────────────────────────────────────
+  Widget _summary(List<ActivitySession> list) {
+    final km = list.fold<double>(0, (a, s) => a + s.distanceKm);
+    final secs = list.fold<int>(0, (a, s) => a + s.durationSeconds);
+    final h = secs ~/ 3600, m = (secs % 3600) ~/ 60;
+    final time = h > 0 ? '${h}h ${m}m' : '${m}m';
+
+    int count(ActivityType t) => list.where((s) => s.type == t).length;
+
+    Widget stat(String emoji, String value, String label, Color c, Color e) =>
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            child: Block(
+              color: c,
+              edge: e,
+              depth: 5,
+              radius: 12,
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+              child: Column(children: [
+                Text(emoji, style: const TextStyle(fontSize: 20)),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(value, size: 18, stroke: 4)),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(label, size: 9, stroke: 2.5)),
+              ]),
+            ),
+          ),
+        );
+
+    return Column(children: [
+      Row(children: [
+        stat('📍', km.toStringAsFixed(1), 'TOTAL KM', Rb.green, Rb.greenEdge),
+        stat('⏱️', time, 'ACTIVE TIME', Rb.blue, Rb.blueEdge),
+        stat('🎯', '${list.length}', 'SESSIONS', Rb.orange, Rb.orangeEdge),
+      ]),
+      const SizedBox(height: 10),
+      Block(
+        color: Rb.panel,
+        edge: Rb.panelEdge,
+        depth: 5,
+        radius: 12,
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            Container(
-              width: 72,
-              height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.borderDim,
-                border: Border.all(color: AppColors.textSub.withOpacity(0.3)),
-              ),
-              child: const Icon(Icons.directions_run,
-                  color: AppColors.textSub, size: 32),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'NO ACTIVITY YET',
-              style: TextStyle(
-                color: AppColors.textMain,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 2,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Hit START RUN on the home screen\nto log your first session!',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSub, fontSize: 12),
-            ),
+            for (final t in ActivityType.values)
+              BlockText('${t.emoji} ${count(t)}', size: 14, stroke: 3.5),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ActivityCard extends StatelessWidget {
-  final ActivitySession session;
-
-  const _ActivityCard({required this.session});
-
-  Color get _typeColor {
-    switch (session.type) {
-      case ActivityType.walk: return AppColors.cyan;
-      case ActivityType.jog:  return AppColors.gold;
-      case ActivityType.run:  return AppColors.blue;
-    }
+    ]);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final time = DateFormat('h:mm a').format(session.startTime);
+  // ── 7-day distance chart ─────────────────────────────────────────────
+  Widget _chart(List<ActivitySession> list) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final days = List.generate(7, (i) => today.subtract(Duration(days: 6 - i)));
+    final totals = days.map((d) {
+      return list
+          .where((s) =>
+              s.startTime.year == d.year &&
+              s.startTime.month == d.month &&
+              s.startTime.day == d.day)
+          .fold<double>(0, (a, s) => a + s.distanceKm);
+    }).toList();
+    final maxV = totals.fold<double>(0, (a, b) => b > a ? b : a);
+    const chartH = 110.0;
 
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _typeColor.withOpacity(0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: _typeColor.withOpacity(0.04),
-            blurRadius: 8,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
+    return Block(
+      color: Rb.panel,
+      edge: Rb.panelEdge,
+      depth: 6,
+      padding: const EdgeInsets.all(12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: _typeColor.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _typeColor.withOpacity(0.3)),
-                ),
-                child: Center(
-                  child: Text(session.type.emoji,
-                      style: const TextStyle(fontSize: 18)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          session.type.label.toUpperCase(),
-                          style: TextStyle(
-                            color: _typeColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1,
+          const BlockText('📊 LAST 7 DAYS (KM)', size: 13, stroke: 3.5),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: chartH + 40,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (var i = 0; i < 7; i++)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 3),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: BlockText(
+                              totals[i] > 0
+                                  ? totals[i].toStringAsFixed(1)
+                                  : '',
+                              size: 9,
+                              stroke: 2.5,
+                            ),
                           ),
-                        ),
-                        if (session.userPick != session.type) ...[
-                          const SizedBox(width: 6),
+                          const SizedBox(height: 3),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 5, vertical: 1),
+                            height: maxV <= 0
+                                ? 4
+                                : (totals[i] / maxV * chartH).clamp(4.0, chartH),
                             decoration: BoxDecoration(
-                              color: AppColors.gold.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(4),
+                              color: i == 6 ? Rb.gold : Rb.green,
+                              border:
+                                  Border.all(color: Colors.black, width: 3),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                            child: const Text(
-                              'GPS override',
-                              style: TextStyle(
-                                color: AppColors.gold,
-                                fontSize: 8,
-                              ),
-                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          BlockText(
+                            DateFormat('E').format(days[i]).substring(0, 1),
+                            size: 11,
+                            stroke: 3,
+                            color: i == 6 ? Rb.gold : Colors.white,
                           ),
                         ],
-                      ],
-                    ),
-                    Text(
-                      time,
-                      style: const TextStyle(
-                        color: AppColors.textSub,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.gold.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '+${session.xpEarned} XP',
-                      style: const TextStyle(
-                        color: AppColors.gold,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '+${session.coinsEarned} 🪙',
-                    style: const TextStyle(
-                      color: AppColors.textSub,
-                      fontSize: 10,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 12),
-          const Divider(color: AppColors.borderDim, height: 1),
-          const SizedBox(height: 12),
-
-          Row(
-            children: [
-              _MiniStat(
-                  label: 'DISTANCE',
-                  value: '${session.distanceKm.toStringAsFixed(2)} km',
-                  color: _typeColor),
-              _MiniStat(
-                  label: 'DURATION',
-                  value: session.formattedDuration,
-                  color: AppColors.textMain),
-              _MiniStat(
-                  label: 'PACE',
-                  value: session.formattedPace,
-                  color: AppColors.gold),
-              _MiniStat(
-                  label: 'MAX SPD',
-                  value: '${session.maxSpeedKmh.toStringAsFixed(1)} km/h',
-                  color: AppColors.orange),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniStat extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _MiniStat({
-    required this.label,
-    required this.value,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            value,
-            style: TextStyle(
-              color: color,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.textSub,
-              fontSize: 8,
-              letterSpacing: 0.5,
+              ],
             ),
           ),
         ],
       ),
     );
   }
-}
 
-class _DateHeader extends StatelessWidget {
-  final String date;
-  const _DateHeader({required this.date});
+  // ── History ──────────────────────────────────────────────────────────
+  List<Widget> _history(List<ActivitySession> list) {
+    final out = <Widget>[];
+    String? lastKey;
+    for (final s in list) {
+      final key = DateFormat('yyyyMMdd').format(s.startTime);
+      if (key != lastKey) {
+        lastKey = key;
+        out.add(Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 10),
+          child: Block(
+            color: Rb.slate,
+            edge: Rb.slateEdge,
+            depth: 4,
+            radius: 10,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: BlockText(
+                '📅 ${DateFormat('MMMM d, yyyy').format(s.startTime).toUpperCase()}',
+                size: 12,
+                stroke: 3),
+          ),
+        ));
+      }
+      out.add(Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _sessionCard(s),
+      ));
+    }
+    return out;
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Row(
-        children: [
-          Text(
-            date.toUpperCase(),
-            style: const TextStyle(
-              color: AppColors.textSub,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 2,
+  Widget _sessionCard(ActivitySession s) {
+    final (c, e) = _colors(s.type);
+    final overridden = s.userPick != s.type;
+
+    Widget mini(String label, String value) => Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Block(
+              color: Rb.slot,
+              edge: Rb.panelEdge,
+              depth: 3,
+              radius: 8,
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+              child: Column(children: [
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(value, size: 12, stroke: 3)),
+                FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(label, size: 8, stroke: 2)),
+              ]),
+            ),
+          ),
+        );
+
+    return Block(
+      color: Rb.panel,
+      edge: Rb.panelEdge,
+      depth: 6,
+      padding: const EdgeInsets.all(10),
+      child: Column(children: [
+        Row(children: [
+          Block(
+            color: c,
+            edge: e,
+            depth: 4,
+            radius: 10,
+            padding: EdgeInsets.zero,
+            child: SizedBox(
+              width: 46,
+              height: 46,
+              child: Center(
+                  child:
+                      Text(s.type.emoji, style: const TextStyle(fontSize: 24))),
             ),
           ),
           const SizedBox(width: 10),
-          const Expanded(
-            child: Divider(color: AppColors.borderDim, height: 1),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: BlockText(s.type.label.toUpperCase(),
+                      size: 15, stroke: 3.5),
+                ),
+                BlockText(DateFormat('h:mm a').format(s.startTime),
+                    size: 10, stroke: 2.5, color: const Color(0xFFB8BDC4)),
+                if (overridden)
+                  const BlockText('📡 GPS OVERRIDE',
+                      size: 9, stroke: 2.5, color: Rb.neon),
+              ],
+            ),
           ),
-        ],
-      ),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Block(
+              color: Rb.gold,
+              edge: Rb.goldEdge,
+              depth: 3,
+              radius: 8,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: BlockText('+${s.xpEarned} XP', size: 11, stroke: 3),
+            ),
+            const SizedBox(height: 4),
+            BlockText('🪙 ${s.coinsEarned}', size: 11, stroke: 3),
+          ]),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          mini('KM', s.distanceKm.toStringAsFixed(2)),
+          mini('TIME', s.formattedDuration),
+          mini('PACE', s.formattedPace),
+          mini('MAX', '${s.maxSpeedKmh.toStringAsFixed(1)}'),
+        ]),
+      ]),
     );
   }
-}
 
-class _FilterChip extends StatelessWidget {
-  final String label;
-  final Color color;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _FilterChip({
-    required this.label,
-    required this.color,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withOpacity(0.15) : AppColors.bgCard,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? color : AppColors.borderDim,
-            width: isSelected ? 1.5 : 1,
-          ),
+  Widget _message(String emoji, String title, String sub) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Block(
+          color: Rb.panel,
+          edge: Rb.panelEdge,
+          depth: 6,
+          padding: const EdgeInsets.all(20),
+          child: Column(children: [
+            Text(emoji, style: const TextStyle(fontSize: 40)),
+            const SizedBox(height: 8),
+            BlockText(title, size: 16, stroke: 4),
+            const SizedBox(height: 4),
+            BlockText(sub,
+                size: 11,
+                stroke: 2.5,
+                color: const Color(0xFFB8BDC4),
+                align: TextAlign.center),
+          ]),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? color : AppColors.textSub,
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            letterSpacing: 0.5,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SummaryCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final String unit;
-  final Color color;
-  final IconData icon;
-
-  const _SummaryCard({
-    required this.label,
-    required this.value,
-    required this.unit,
-    required this.color,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(height: 6),
-            Text(value,
-                style: TextStyle(
-                    color: color,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800)),
-            Text(unit,
-                style: const TextStyle(
-                    color: AppColors.textSub, fontSize: 9)),
-            const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(
-                    color: AppColors.textSub,
-                    fontSize: 9,
-                    letterSpacing: 0.5)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TypeCount extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final int count;
-  final Color color;
-
-  const _TypeCount({
-    required this.emoji,
-    required this.label,
-    required this.count,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(emoji, style: const TextStyle(fontSize: 20)),
-        const SizedBox(height: 4),
-        Text(
-          '$count',
-          style: TextStyle(
-              color: color,
-              fontSize: 16,
-              fontWeight: FontWeight.w800),
-        ),
-        Text(
-          label,
-          style: const TextStyle(color: AppColors.textSub, fontSize: 10),
-        ),
-      ],
-    );
-  }
+      );
 }

@@ -1,9 +1,12 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../theme/app_colors.dart';
-import '../main_shell.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../../utils/password_rules.dart';
+import '../../widgets/block_inputs.dart';
+import '../../widgets/block_ui.dart';
 import '../character/character_creation_screen.dart';
+import '../main_shell.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -17,99 +20,115 @@ class _SignupScreenState extends State<SignupScreen> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+
   bool _loading = false;
   bool _obscure = true;
   bool _obscureConfirm = true;
+  bool _submitted = false; // show field errors only after the first attempt
   String? _gender; // 'male' | 'female'
 
-  Future<void> _goHome() async {
-  if (!mounted) return;
+  static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
+  static final _nameRe = RegExp(r'^[A-Za-z0-9_ ]{3,16}$');
 
-  final uid = FirebaseAuth.instance.currentUser?.uid;
-  bool characterCreated = false;
-
-  if (uid != null) {
-    final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-    characterCreated = doc.data()?['character_created'] as bool? ?? false;
+  // ── validation ───────────────────────────────────────────────────────
+  String? get _nameError {
+    final v = _usernameCtrl.text.trim();
+    if (v.isEmpty) return 'Pick a hero name';
+    if (!_nameRe.hasMatch(v)) return '3-16 letters, numbers, _ or spaces';
+    return null;
   }
 
-  if (!mounted) return;
+  String? get _emailError {
+    final v = _emailCtrl.text.trim();
+    if (v.isEmpty) return 'Enter your email';
+    if (!_emailRe.hasMatch(v)) return 'That email looks invalid';
+    return null;
+  }
 
-  Navigator.of(context).pushAndRemoveUntil(
-    MaterialPageRoute(
-      builder: (_) => characterCreated
-          ? const MainShell()
-          : const CharacterCreationScreen(),
-    ),
-    (_) => false,
-  );
-}
+  String? get _passError =>
+      PasswordRules.isStrong(_passCtrl.text) ? null : 'Meet all the password rules below';
+
+  String? get _confirmError {
+    if (_confirmCtrl.text.isEmpty) return 'Re-enter your password';
+    if (_confirmCtrl.text != _passCtrl.text) return 'Passwords do not match';
+    return null;
+  }
+
+  bool get _valid =>
+      _nameError == null &&
+      _emailError == null &&
+      _passError == null &&
+      _confirmError == null &&
+      _gender != null;
+
+  // ── flow ─────────────────────────────────────────────────────────────
+  Future<void> _goHome() async {
+    if (!mounted) return;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    bool characterCreated = false;
+    if (uid != null) {
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      characterCreated = doc.data()?['character_created'] as bool? ?? false;
+    }
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) =>
+            characterCreated ? const MainShell() : const CharacterCreationScreen(),
+      ),
+      (_) => false,
+    );
+  }
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    blockSnack(context, msg);
   }
 
   Future<void> _createUserDoc(User user, String username, {String? gender}) async {
-  final doc = await FirebaseFirestore.instance
-      .collection('users')
-      .doc(user.uid)
-      .get();
-  if (!doc.exists) {
-    await FirebaseFirestore.instance
-        .collection('users')
-        .doc(user.uid)
-        .set({
-      'username': username,
-      'email': user.email,
-      'gender': gender,
-      'level': 1,
-      'xp': 0,
-      'coins': 100,
-      'gems': 10,
-      'heroic_souls': 0,
-      'total_km': 0.0,
-      'total_steps': 0,
-      'total_sessions': 0,
-      'created_at': FieldValue.serverTimestamp(),
-
-      // ── New: character customization fields ─────────────────────
-      'character_created': false,   // flips to true once they finish the creation flow
-      'height_cm': null,
-      'weight_kg': null,
-      'skin_tone': '#E0AC69',       // default until they pick one
-      'hair_style': 'short',        // default until they pick one
-      'hair_color': '#1A1A1A',      // default until they pick one
-      'body_tier': 'average',       // recalculated once height/weight are set
-    });
+    final doc =
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    if (!doc.exists) {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'username': username,
+        'email': user.email,
+        'gender': gender,
+        'level': 1,
+        'xp': 0,
+        'coins': 100,
+        'gems': 10,
+        'heroic_souls': 0,
+        'total_km': 0.0,
+        'total_steps': 0,
+        'total_sessions': 0,
+        'created_at': FieldValue.serverTimestamp(),
+        'character_created': false,
+        'height_cm': null,
+        'weight_kg': null,
+        'skin_tone': '#E0AC69',
+        'hair_style': 'short',
+        'hair_color': '#1A1A1A',
+        'body_tier': 'average',
+      });
+    }
   }
-}
 
   Future<void> _signupEmail() async {
+    setState(() => _submitted = true);
+    if (!_valid) {
+      _snack(_gender == null
+          ? 'Pick your hero type and fix the red fields.'
+          : 'Fix the red fields to continue.');
+      return;
+    }
+
     final username = _usernameCtrl.text.trim();
-    final email = _emailCtrl.text.trim();
-    final pass = _passCtrl.text.trim();
-    final confirm = _confirmCtrl.text.trim();
-
-    if (username.isEmpty || email.isEmpty || pass.isEmpty || _gender == null) {
-      _snack('Please fill in all fields.');
-      return;
-    }
-    if (pass != confirm) {
-      _snack('Passwords do not match.');
-      return;
-    }
-    if (pass.length < 6) {
-      _snack('Password must be at least 6 characters.');
-      return;
-    }
-
     setState(() => _loading = true);
     try {
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email,
-        password: pass,
+        email: _emailCtrl.text.trim(),
+        password: _passCtrl.text, // never trimmed
       );
       if (cred.user != null) {
         await cred.user!.updateDisplayName(username);
@@ -126,11 +145,10 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _signupGoogle() async {
     setState(() => _loading = true);
     try {
-      final cred = await FirebaseAuth.instance
-          .signInWithPopup(GoogleAuthProvider());
+      final cred =
+          await FirebaseAuth.instance.signInWithPopup(GoogleAuthProvider());
       if (cred.user == null) return;
-      await _createUserDoc(
-          cred.user!, cred.user!.displayName ?? 'Hero');
+      await _createUserDoc(cred.user!, cred.user!.displayName ?? 'Hero');
       _goHome();
     } on FirebaseAuthException catch (e) {
       _snack(e.message ?? 'Google sign-up failed.');
@@ -148,258 +166,263 @@ class _SignupScreenState extends State<SignupScreen> {
     super.dispose();
   }
 
+  // ── UI ───────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDeep,
+      backgroundColor: Rb.bg,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios,
-                      color: AppColors.textSub, size: 18),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'CREATE ACCOUNT',
-                style: TextStyle(
-                  color: AppColors.blue,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 3,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Begin your hero journey',
-                style: TextStyle(
-                  color: AppColors.textSub,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 32),
-              _buildField(
-                controller: _usernameCtrl,
-                hint: 'Hero Name',
-                icon: Icons.person_outline,
-              ),
-              const SizedBox(height: 14),
-              _buildField(
-                controller: _emailCtrl,
-                hint: 'Email',
-                icon: Icons.email_outlined,
-              ),
-              const SizedBox(height: 14),
-              _buildField(
-                controller: _passCtrl,
-                hint: 'Password',
-                icon: Icons.lock_outline,
-                obscure: _obscure,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscure ? Icons.visibility_off : Icons.visibility,
-                    color: AppColors.textSub,
-                    size: 20,
-                  ),
-                  onPressed: () => setState(() => _obscure = !_obscure),
-                ),
-              ),
-              const SizedBox(height: 14),
-              _buildField(
-                controller: _confirmCtrl,
-                hint: 'Confirm Password',
-                icon: Icons.lock_outline,
-                obscure: _obscureConfirm,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscureConfirm
-                        ? Icons.visibility_off
-                        : Icons.visibility,
-                    color: AppColors.textSub,
-                    size: 20,
-                  ),
-                  onPressed: () =>
-                      setState(() => _obscureConfirm = !_obscureConfirm),
-                ),
-              ),
-              const SizedBox(height: 14),
-              _buildGenderPicker(),
-              const SizedBox(height: 24),
-              SizedBox(
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _loading ? null : _signupEmail,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.blue,
-                    disabledBackgroundColor:
-                        AppColors.blue.withOpacity(0.5),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 460),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: PressBlock(
+                      color: const Color(0xFFE2E2E2),
+                      edge: const Color(0xFF6B6B6B),
+                      depth: 4,
+                      radius: 12,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      onTap: () => Navigator.pop(context),
+                      child: const Text('◀',
+                          style: TextStyle(
+                              color: Color(0xFF232527),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900)),
                     ),
                   ),
-                  child: _loading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
+                  const SizedBox(height: 14),
+                  const AuthBanner(
+                    title: 'CREATE ACCOUNT',
+                    subtitle: 'BEGIN YOUR HERO JOURNEY',
+                  ),
+                  const SizedBox(height: 22),
+                  Block(
+                    color: Rb.panel,
+                    edge: Rb.panelEdge,
+                    depth: 6,
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        BlockTextField(
+                          label: 'HERO NAME',
+                          hint: 'e.g. SwiftRunner',
+                          icon: '🧑',
+                          controller: _usernameCtrl,
+                          action: TextInputAction.next,
+                          onChanged: (_) => setState(() {}),
+                          error: _submitted ? _nameError : null,
+                        ),
+                        const SizedBox(height: 16),
+                        BlockTextField(
+                          label: 'EMAIL',
+                          hint: 'hero@email.com',
+                          icon: '✉️',
+                          controller: _emailCtrl,
+                          keyboardType: TextInputType.emailAddress,
+                          action: TextInputAction.next,
+                          onChanged: (_) => setState(() {}),
+                          error: _submitted ? _emailError : null,
+                        ),
+                        const SizedBox(height: 16),
+                        BlockTextField(
+                          label: 'PASSWORD',
+                          hint: 'Make it strong!',
+                          icon: '🔒',
+                          controller: _passCtrl,
+                          obscure: _obscure,
+                          action: TextInputAction.next,
+                          onChanged: (_) => setState(() {}),
+                          error: _submitted ? _passError : null,
+                          suffix: _eye(_obscure, () => setState(() => _obscure = !_obscure)),
+                        ),
+                        const SizedBox(height: 12),
+                        _strengthMeter(),
+                        const SizedBox(height: 16),
+                        BlockTextField(
+                          label: 'CONFIRM PASSWORD',
+                          hint: 'Type it again',
+                          icon: '🔁',
+                          controller: _confirmCtrl,
+                          obscure: _obscureConfirm,
+                          action: TextInputAction.done,
+                          onChanged: (_) => setState(() {}),
+                          error: (_submitted || _confirmCtrl.text.isNotEmpty)
+                              ? _confirmError
+                              : null,
+                          suffix: _eye(_obscureConfirm,
+                              () => setState(() => _obscureConfirm = !_obscureConfirm)),
+                        ),
+                        const SizedBox(height: 18),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 4, bottom: 6),
+                          child: BlockText('HERO TYPE', size: 12, stroke: 3.5),
+                        ),
+                        Row(
+                          children: [
+                            Expanded(child: _genderTile('male', '♂ MALE')),
+                            const SizedBox(width: 10),
+                            Expanded(child: _genderTile('female', '♀ FEMALE')),
+                          ],
+                        ),
+                        if (_submitted && _gender == null)
+                          const Padding(
+                            padding: EdgeInsets.only(left: 4, top: 8),
+                            child: BlockText('⚠ Choose a hero type',
+                                size: 11, stroke: 3, color: Color(0xFFFF8A80)),
                           ),
-                        )
-                      : const Text(
-                          'CREATE HERO',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 3,
+                        const SizedBox(height: 22),
+                        NeonBlueButton(
+                          label: 'CREATE HERO',
+                          loading: _loading,
+                          onTap: _signupEmail,
+                        ),
+                        const SizedBox(height: 16),
+                        PressBlock(
+                          color: const Color(0xFFF2F3F5),
+                          edge: const Color(0xFF6B6F75),
+                          depth: 5,
+                          radius: 14,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          onTap: _loading ? null : _signupGoogle,
+                          child: const SizedBox(
+                            width: double.infinity,
+                            child: Center(
+                              child: BlockText('G  SIGN UP WITH GOOGLE',
+                                  size: 13, stroke: 3.5),
+                            ),
                           ),
                         ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Expanded(child: Divider(color: AppColors.borderDim)),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('or',
-                        style: TextStyle(color: AppColors.textSub)),
-                  ),
-                  const Expanded(child: Divider(color: AppColors.borderDim)),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 52,
-                child: OutlinedButton.icon(
-                  onPressed: _loading ? null : _signupGoogle,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppColors.borderDim),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
+                      ],
                     ),
                   ),
-                  icon: const Icon(Icons.g_mobiledata,
-                      color: AppColors.blue, size: 22),
-                  label: const Text(
-                    'Sign up with Google',
-                    style: TextStyle(
-                      color: AppColors.textMain,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 28),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'Already have an account? ',
-                    style:
-                        TextStyle(color: AppColors.textSub, fontSize: 13),
-                  ),
-                  GestureDetector(
+                  const SizedBox(height: 20),
+                  PressBlock(
+                    color: Rb.slot,
+                    edge: Rb.slateEdge,
+                    depth: 5,
+                    radius: 14,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
                     onTap: () => Navigator.pop(context),
-                    child: const Text(
-                      'Login',
-                      style: TextStyle(
-                        color: AppColors.blue,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
+                    child: const SizedBox(
+                      width: double.infinity,
+                      child: Center(
+                        child: BlockText('ALREADY A HERO? LOGIN',
+                            size: 13, stroke: 3.5),
                       ),
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-    bool obscure = false,
-    Widget? suffixIcon,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderDim),
-      ),
-      child: TextField(
-        controller: controller,
-        obscureText: obscure,
-        style: const TextStyle(color: AppColors.textMain, fontSize: 14),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(color: AppColors.textSub, fontSize: 14),
-          prefixIcon: Icon(icon, color: AppColors.textSub, size: 20),
-          suffixIcon: suffixIcon,
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(
-              vertical: 16, horizontal: 16),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGenderPicker() {
-    Widget option(String value, String label, IconData icon) {
-      final selected = _gender == value;
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => setState(() => _gender = value),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(
-              color: selected
-                  ? AppColors.blue.withOpacity(0.12)
-                  : AppColors.bgCard,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: selected ? AppColors.blue : AppColors.borderDim,
-                width: selected ? 1.5 : 1,
-              ),
-            ),
-            child: Column(
-              children: [
-                Icon(icon,
-                    color: selected ? AppColors.blue : AppColors.textSub,
-                    size: 22),
-                const SizedBox(height: 6),
-                Text(label,
-                    style: TextStyle(
-                        color: selected ? AppColors.blue : AppColors.textMain,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13)),
-              ],
-            ),
-          ),
+  Widget _eye(bool obscured, VoidCallback onTap) => GestureDetector(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Text(obscured ? '🙈' : '👁️', style: const TextStyle(fontSize: 20)),
         ),
       );
-    }
 
-    return Row(
-      children: [
-        option('male', 'Male', Icons.male),
-        const SizedBox(width: 12),
-        option('female', 'Female', Icons.female),
-      ],
+  /// Live checklist + 6-segment power bar.
+  Widget _strengthMeter() {
+    final pass = _passCtrl.text;
+    final done = PasswordRules.passed(pass);
+    final total = PasswordRules.all.length;
+    final color = done <= 2
+        ? Rb.red
+        : done <= 4
+            ? Rb.orange
+            : done < total
+                ? Rb.gold
+                : Rb.neon;
+    final word = pass.isEmpty
+        ? 'EMPTY'
+        : done <= 2
+            ? 'WEAK'
+            : done <= 4
+                ? 'OKAY'
+                : done < total
+                    ? 'ALMOST'
+                    : 'LEGENDARY';
+
+    return Block(
+      color: Rb.slate,
+      edge: Rb.slateEdge,
+      depth: 4,
+      radius: 12,
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const BlockText('🛡 PASSWORD POWER', size: 11, stroke: 3),
+              const Spacer(),
+              BlockText(word, size: 11, stroke: 3, color: color),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              for (var i = 0; i < total; i++)
+                Expanded(
+                  child: Container(
+                    height: 12,
+                    margin: EdgeInsets.only(right: i == total - 1 ? 0 : 4),
+                    decoration: BoxDecoration(
+                      color: i < done ? color : const Color(0xFF3A3D40),
+                      border: Border.all(color: Colors.black, width: 2),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          for (final r in PasswordRules.all)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(
+                children: [
+                  BlockText(r.test(pass) ? '✔' : '✖',
+                      size: 11,
+                      stroke: 2.5,
+                      color: r.test(pass) ? Rb.neon : const Color(0xFFFF8A80)),
+                  const SizedBox(width: 8),
+                  BlockText(r.label,
+                      size: 11,
+                      stroke: 2.5,
+                      color: r.test(pass) ? Colors.white : const Color(0xFFB8BDC4)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _genderTile(String value, String label) {
+    final sel = _gender == value;
+    return PressBlock(
+      color: sel ? Rb.gold : Rb.slot,
+      edge: sel ? Rb.goldEdge : Rb.slateEdge,
+      depth: 6,
+      radius: 14,
+      forcePressed: sel,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      onTap: () => setState(() => _gender = value),
+      child: Center(child: BlockText(label, size: 14, stroke: 3.5)),
     );
   }
 }
