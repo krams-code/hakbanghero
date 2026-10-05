@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/character_profile.dart';
-import '../../widgets/character_avatar_widget.dart';
+import '../../widgets/hero_sprite.dart';
 import '../../theme/app_colors.dart';
 import '../main_shell.dart';
+
+
 
 class CharacterCreationScreen extends StatefulWidget {
   final bool isEditMode; // true when opened from Equipment to tweak appearance
@@ -23,7 +25,7 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
   final _weightCtrl = TextEditingController();
 
   String _skinTone = kSkinTonePresets[2];
-  HairStyle _hairStyle = HairStyle.short;
+  HairStyle _hairStyle = HairStyle.shortCrop;
   String _hairColor = kHairColorPresets[0];
 
   bool _saving = false;

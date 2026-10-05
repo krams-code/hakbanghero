@@ -1,115 +1,170 @@
-// lib/models/character_profile.dart
+import '../constants/asset_paths.dart';
 
-enum BodyTier { slim, average, powerhouse }
+enum BodyTier { underweight, normal, overweight, obese }
 
 extension BodyTierExt on BodyTier {
   String get label {
     switch (this) {
-      case BodyTier.slim:       return 'Slim';
-      case BodyTier.average:    return 'Average';
-      case BodyTier.powerhouse: return 'Powerhouse';
+      case BodyTier.underweight: return 'Underweight';
+      case BodyTier.normal:      return 'Normal';
+      case BodyTier.overweight:  return 'Overweight';
+      case BodyTier.obese:       return 'Obese';
     }
   }
 
   String get id {
     switch (this) {
-      case BodyTier.slim:       return 'slim';
-      case BodyTier.average:    return 'average';
-      case BodyTier.powerhouse: return 'powerhouse';
+      case BodyTier.underweight: return 'underweight';
+      case BodyTier.normal:      return 'normal';
+      case BodyTier.overweight:  return 'overweight';
+      case BodyTier.obese:       return 'obese';
+    }
+  }
+
+  /// Matches the exact filename under assets/images/character/.
+  String get assetName {
+    switch (this) {
+      case BodyTier.underweight: return 'body_underweight.png';
+      case BodyTier.normal:      return 'body_normal.png';
+      case BodyTier.overweight:  return 'body_overweight.png';
+      case BodyTier.obese:       return 'body_obese.png';
     }
   }
 
   static BodyTier fromId(String id) {
     switch (id) {
-      case 'slim':       return BodyTier.slim;
-      case 'powerhouse':  return BodyTier.powerhouse;
-      default:            return BodyTier.average;
+      case 'underweight': return BodyTier.underweight;
+      case 'overweight':  return BodyTier.overweight;
+      case 'obese':        return BodyTier.obese;
+      default:             return BodyTier.normal;
     }
   }
 
-  /// BMI-based tier calculation.
-  /// Standard BMI bands, repurposed as game body tiers.
   static BodyTier fromBmi(double heightCm, double weightKg) {
-    if (heightCm <= 0 || weightKg <= 0) return BodyTier.average;
+    if (heightCm <= 0 || weightKg <= 0) return BodyTier.normal;
     final heightM = heightCm / 100.0;
     final bmi = weightKg / (heightM * heightM);
-    if (bmi < 18.5) return BodyTier.slim;
-    if (bmi < 25.0) return BodyTier.average;
-    return BodyTier.powerhouse;
+    if (bmi < 18.5) return BodyTier.underweight;
+    if (bmi < 25.0) return BodyTier.normal;
+    if (bmi < 30.0) return BodyTier.overweight;
+    return BodyTier.obese;
   }
 }
 
-enum HairStyle { short, long, buzz, ponytail }
+/// Matches your real hair_*.png files exactly.
+enum HairStyle { warriorSpiky, classicPompadour, wavyMane, longFlowing, shortCrop }
 
 extension HairStyleExt on HairStyle {
   String get id {
     switch (this) {
-      case HairStyle.short:    return 'short';
-      case HairStyle.long:     return 'long';
-      case HairStyle.buzz:     return 'buzz';
-      case HairStyle.ponytail: return 'ponytail';
+      case HairStyle.warriorSpiky:      return 'warrior_spiky';
+      case HairStyle.classicPompadour:  return 'classic_pompadour';
+      case HairStyle.wavyMane:          return 'wavy_mane';
+      case HairStyle.longFlowing:       return 'long_flowing';
+      case HairStyle.shortCrop:         return 'short_crop';
     }
   }
 
   String get label {
     switch (this) {
-      case HairStyle.short:    return 'Short';
-      case HairStyle.long:     return 'Long';
-      case HairStyle.buzz:     return 'Buzz Cut';
-      case HairStyle.ponytail: return 'Ponytail';
+      case HairStyle.warriorSpiky:      return 'Warrior Spiky';
+      case HairStyle.classicPompadour:  return 'Classic Pompadour';
+      case HairStyle.wavyMane:          return 'Wavy Mane';
+      case HairStyle.longFlowing:       return 'Long Flowing';
+      case HairStyle.shortCrop:         return 'Short Crop';
     }
   }
 
+  /// Exact filename, matching your uploaded asset tree.
+  String get assetFileName {
+    switch (this) {
+      case HairStyle.warriorSpiky:      return 'hair_01_warrior_spiky.png';
+      case HairStyle.classicPompadour:  return 'hair_03_classic_pompadour.png';
+      case HairStyle.wavyMane:          return 'hair_05_wavy_mane.png';
+      case HairStyle.longFlowing:       return 'hair_07_long_flowing.png';
+      case HairStyle.shortCrop:         return 'hair_14_short_crop.png';
+    }
+  }
+
+  String get assetPath => '$kHairDir/$assetFileName';
+
   static HairStyle fromId(String id) {
     switch (id) {
-      case 'long':     return HairStyle.long;
-      case 'buzz':      return HairStyle.buzz;
-      case 'ponytail':  return HairStyle.ponytail;
-      default:          return HairStyle.short;
+      case 'classic_pompadour': return HairStyle.classicPompadour;
+      case 'wavy_mane':         return HairStyle.wavyMane;
+      case 'long_flowing':      return HairStyle.longFlowing;
+      case 'short_crop':        return HairStyle.shortCrop;
+      default:                  return HairStyle.warriorSpiky;
     }
   }
 }
 
-/// Preset skin tone swatches (hex strings), roughly Fitzpatrick-inspired range.
+/// Only one expression exists today (expression_01.png = neutral).
+/// Add more cases here later as you add more face art.
+enum FaceExpression { neutral }
+
+extension FaceExpressionExt on FaceExpression {
+  String get id {
+    switch (this) {
+      case FaceExpression.neutral: return 'neutral';
+    }
+  }
+
+  String get assetFileName {
+    switch (this) {
+      case FaceExpression.neutral: return 'expression_01.png';
+    }
+  }
+
+  String get assetPath => '$kFaceDir/$assetFileName';
+
+  static FaceExpression fromId(String id) {
+    switch (id) {
+      default: return FaceExpression.neutral;
+    }
+  }
+}
+
 const List<String> kSkinTonePresets = [
-  '#FFE0BD', // fair
-  '#F1C27D', // light
-  '#E0AC69', // medium-light
-  '#C68642', // medium
-  '#8D5524', // medium-dark
-  '#5C3317', // dark
+  '#FFE0BD',
+  '#F1C27D',
+  '#E0AC69',
+  '#C68642',
+  '#8D5524',
+  '#5C3317',
 ];
 
-/// Preset hair color swatches (hex strings).
 const List<String> kHairColorPresets = [
-  '#1A1A1A', // black
-  '#3B2415', // dark brown
-  '#8B5A2B', // brown
-  '#D2A679', // dirty blonde
-  '#E8C468', // blonde
-  '#B33A1E', // auburn/red
-  '#4A4A4A', // grey/silver
+  '#1A1A1A',
+  '#3B2415',
+  '#8B5A2B',
+  '#D2A679',
+  '#E8C468',
+  '#B33A1E',
+  '#4A4A4A',
 ];
 
 class CharacterProfile {
   final double? heightCm;
   final double? weightKg;
-  final String skinTone;    // hex
+  final String skinTone;
   final HairStyle hairStyle;
-  final String hairColor;   // hex
+  final String hairColor;
+  final FaceExpression faceExpression;
   final bool created;
 
   const CharacterProfile({
     this.heightCm,
     this.weightKg,
     this.skinTone = '#E0AC69',
-    this.hairStyle = HairStyle.short,
+    this.hairStyle = HairStyle.shortCrop,
     this.hairColor = '#1A1A1A',
+    this.faceExpression = FaceExpression.neutral,
     this.created = false,
   });
 
   BodyTier get bodyTier {
-    if (heightCm == null || weightKg == null) return BodyTier.average;
+    if (heightCm == null || weightKg == null) return BodyTier.normal;
     return BodyTierExt.fromBmi(heightCm!, weightKg!);
   }
 
@@ -119,6 +174,7 @@ class CharacterProfile {
     String? skinTone,
     HairStyle? hairStyle,
     String? hairColor,
+    FaceExpression? faceExpression,
     bool? created,
   }) {
     return CharacterProfile(
@@ -127,6 +183,7 @@ class CharacterProfile {
       skinTone: skinTone ?? this.skinTone,
       hairStyle: hairStyle ?? this.hairStyle,
       hairColor: hairColor ?? this.hairColor,
+      faceExpression: faceExpression ?? this.faceExpression,
       created: created ?? this.created,
     );
   }
@@ -137,6 +194,7 @@ class CharacterProfile {
     'skin_tone': skinTone,
     'hair_style': hairStyle.id,
     'hair_color': hairColor,
+    'face_expression': faceExpression.id,
     'body_tier': bodyTier.id,
     'character_created': created,
   };
@@ -146,8 +204,9 @@ class CharacterProfile {
       heightCm: (data['height_cm'] as num?)?.toDouble(),
       weightKg: (data['weight_kg'] as num?)?.toDouble(),
       skinTone: data['skin_tone'] as String? ?? '#E0AC69',
-      hairStyle: HairStyleExt.fromId(data['hair_style'] as String? ?? 'short'),
+      hairStyle: HairStyleExt.fromId(data['hair_style'] as String? ?? 'short_crop'),
       hairColor: data['hair_color'] as String? ?? '#1A1A1A',
+      faceExpression: FaceExpressionExt.fromId(data['face_expression'] as String? ?? 'neutral'),
       created: data['character_created'] as bool? ?? false,
     );
   }

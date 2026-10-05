@@ -7,7 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/activity_model.dart';
 import '../../models/daily_quest_definitions.dart';
 import '../theme/app_colors.dart';
-
+import '../widgets/prerun_view.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 //  Pre-run: user picks activity type, then tracking begins
 // ─────────────────────────────────────────────────────────────────────────────
@@ -368,161 +368,12 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   }
 
   // ── Pre-run picker ─────────────────────────────────────────────────────────
-  Widget _buildPreRun() {
-    return SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.borderDim),
-                    ),
-                    child: const Icon(Icons.arrow_back, color: AppColors.blue, size: 20),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  'START SESSION',
-                  style: TextStyle(
-                    color: AppColors.textMain,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 40),
-          ScaleTransition(
-            scale: _pulse,
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [AppColors.borderDim, AppColors.bgDeep],
-                ),
-                border: Border.all(color: AppColors.blue, width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.blue.withOpacity(0.3),
-                    blurRadius: 30,
-                    spreadRadius: 5,
-                  ),
-                ],
-              ),
-              child: const Icon(Icons.directions_run, color: AppColors.blue, size: 52),
-            ),
-          ),
-          const SizedBox(height: 32),
-          const Text(
-            'SELECT ACTIVITY',
-            style: TextStyle(
-              color: AppColors.textSub,
-              fontSize: 12,
-              letterSpacing: 3,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Row(
-              children: ActivityType.values
-                  .map((t) => _ActivityTypeButton(
-                        type: t,
-                        isSelected: _userPick == t,
-                        onTap: () => setState(() => _userPick = t),
-                      ))
-                  .toList(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.borderDim),
-              ),
-              child: const Column(
-                children: [
-                  _SpeedInfo(label: '🚶 Walk', range: '< 6 km/h',    color: AppColors.cyan),
-                  SizedBox(height: 6),
-                  _SpeedInfo(label: '🏃 Jog',  range: '6 – 10 km/h', color: AppColors.gold),
-                  SizedBox(height: 6),
-                  _SpeedInfo(label: '⚡ Run',  range: '> 10 km/h',   color: AppColors.blue),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              'Your selection will be confirmed by GPS speed during the session.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSub, fontSize: 11),
-            ),
-          ),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-            child: SizedBox(
-              width: double.infinity,
-              height: 60,
-              child: ElevatedButton(
-                onPressed: _startTracking,
-                style: ElevatedButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                ),
-                child: Ink(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [AppColors.blue, AppColors.cyan],
-                    ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: Container(
-                    alignment: Alignment.center,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.play_arrow, color: Colors.white, size: 26),
-                        const SizedBox(width: 8),
-                        Text(
-                          'BEGIN ${_userPick.label.toUpperCase()}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+       Widget _buildPreRun() => PreRunView(
+           selected: _userPick,
+           onSelect: (t) => setState(() => _userPick = t),
+           onBack: () => Navigator.of(context).pop(),
+           onStart: _startTracking,
+         );
 
   // ── Active tracking ────────────────────────────────────────────────────────
   Widget _buildTracking() {

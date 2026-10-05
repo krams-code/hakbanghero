@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../theme/app_colors.dart';
+import '../../widgets/block_ui.dart';
+import '../../widgets/hero_sprite.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -10,35 +11,30 @@ class LeaderboardScreen extends StatefulWidget {
   State<LeaderboardScreen> createState() => _LeaderboardScreenState();
 }
 
-class _LeaderboardScreenState extends State<LeaderboardScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _timeTabCtrl;
+class _LeaderboardScreenState extends State<LeaderboardScreen> {
+  int _timeIdx = 2; // 0 week, 1 month, 2 all time (only all-time is live)
   String _genderFilter = 'all';
-
-  @override
-  void initState() {
-    super.initState();
-    _timeTabCtrl = TabController(length: 3, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _timeTabCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
     final myUid = FirebaseAuth.instance.currentUser?.uid;
 
     return Scaffold(
-      backgroundColor: AppColors.bgDeep,
+      backgroundColor: Rb.bg,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
-            _buildTimeTabs(),
-            _buildFilterChips(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 4),
+                  _buildTimeTabs(),
+                  _buildFilterChips(),
+                ],
+              ),
+            ),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
@@ -49,13 +45,10 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(
-                        child: CircularProgressIndicator(color: AppColors.blue));
+                        child: CircularProgressIndicator(color: Rb.green));
                   }
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return const Center(
-                      child: Text('No heroes on the board yet.',
-                          style: TextStyle(color: AppColors.textSub)),
-                    );
+                    return _emptyNote('No heroes on the board yet.');
                   }
 
                   var entries = snapshot.data!.docs
@@ -63,34 +56,18 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
                       .toList();
 
                   if (_genderFilter != 'all') {
-                    entries = entries
-                        .where((e) => e.gender == _genderFilter)
-                        .toList();
+                    entries =
+                        entries.where((e) => e.gender == _genderFilter).toList();
                   }
-
                   if (entries.isEmpty) {
-                    return const Center(
-                      child: Text('No heroes match this filter yet.',
-                          style: TextStyle(color: AppColors.textSub)),
-                    );
+                    return _emptyNote('No heroes match this filter yet.');
                   }
 
-                  final top3 = entries.take(3).toList();
-                  final rest =
-                      entries.length > 3 ? entries.sublist(3) : <_LeaderboardEntry>[];
-
-                  return ListView(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    children: [
-                      if (top3.isNotEmpty) _buildPodium(top3),
-                      const SizedBox(height: 8),
-                      ...List.generate(rest.length, (i) {
-                        final rank = i + 4;
-                        final entry = rest[i];
-                        final isMe = entry.uid == myUid;
-                        return _buildRow(rank, entry, isMe);
-                      }),
-                    ],
+                  return ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    itemCount: entries.length,
+                    itemBuilder: (context, i) =>
+                        _buildRow(i + 1, entries[i], entries[i].uid == myUid),
                   );
                 },
               ),
@@ -101,63 +78,69 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
     );
   }
 
-  Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-      child: Row(
-        children: [
-          const Icon(Icons.leaderboard, color: AppColors.blue, size: 20),
-          const SizedBox(width: 8),
-          const Text(
-            'LEADERBOARD',
-            style: TextStyle(
-              color: AppColors.blue,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 3,
-            ),
+  Widget _emptyNote(String text) => Center(
+        child: Block(
+          color: Rb.slate,
+          edge: Rb.slateEdge,
+          padding: const EdgeInsets.all(18),
+          child: Text(
+            text,
+            style: const TextStyle(
+                color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w900),
           ),
-        ],
+        ),
+      );
+
+  // ───────────────────────── header + filters ─────────────────────────
+
+  Widget _buildHeader() {
+    return Block(
+      color: Rb.gold,
+      edge: Rb.goldEdge,
+      depth: 6,
+      gloss: true,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: const SizedBox(
+        width: double.infinity,
+        child: BlockText('🏆 LEADERBOARD', size: 22, stroke: 5),
       ),
     );
   }
 
   Widget _buildTimeTabs() {
+    const labels = ['THIS WEEK', 'THIS MONTH', 'ALL TIME'];
     return Column(
       children: [
-        Container(
-          margin: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-          decoration: BoxDecoration(
-            color: AppColors.bgPanel,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.borderDim),
-          ),
-          child: TabBar(
-            controller: _timeTabCtrl,
-            indicator: BoxDecoration(
-              color: AppColors.blue.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.blue.withOpacity(0.5)),
-            ),
-            labelColor: AppColors.blue,
-            unselectedLabelColor: AppColors.textSub,
-            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
-            tabs: const [
-              Tab(text: 'THIS WEEK'),
-              Tab(text: 'THIS MONTH'),
-              Tab(text: 'ALL TIME'),
+        Row(
+          children: [
+            for (var i = 0; i < labels.length; i++) ...[
+              Expanded(
+                child: PressBlock(
+                  color: _timeIdx == i ? Rb.blue : Rb.panel,
+                  edge: _timeIdx == i ? Rb.blueEdge : Rb.panelEdge,
+                  depth: 5,
+                  radius: 12,
+                  forcePressed: _timeIdx == i,
+                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+                  onTap: () => setState(() => _timeIdx = i),
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: BlockText(labels[i], size: 11, stroke: 3),
+                    ),
+                  ),
+                ),
+              ),
+              if (i != labels.length - 1) const SizedBox(width: 8),
             ],
-          ),
+          ],
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-          child: Row(
-            children: const [
-              Icon(Icons.info_outline, color: AppColors.textSub, size: 12),
-              SizedBox(width: 4),
-              Text('Week/Month filtering coming soon — showing All Time',
-                  style: TextStyle(color: AppColors.textSub, fontSize: 10)),
-            ],
+        const Padding(
+          padding: EdgeInsets.only(bottom: 6),
+          child: Text(
+            'Week/Month filtering coming soon — showing All Time',
+            style: TextStyle(
+                color: Colors.white54, fontSize: 10, fontWeight: FontWeight.w800),
           ),
         ),
       ],
@@ -167,199 +150,209 @@ class _LeaderboardScreenState extends State<LeaderboardScreen>
   Widget _buildFilterChips() {
     Widget chip(String label, String value, {bool disabled = false}) {
       final selected = _genderFilter == value;
-      return GestureDetector(
-        onTap: disabled
-            ? () => ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Local leaderboard coming soon!')),
-                )
-            : () => setState(() => _genderFilter = value),
-        child: Container(
-          margin: const EdgeInsets.only(right: 8),
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: PressBlock(
+          color: disabled
+              ? Rb.panel
+              : selected
+                  ? Rb.green
+                  : Rb.slot,
+          edge: disabled
+              ? Rb.panelEdge
+              : selected
+                  ? Rb.greenEdge
+                  : Rb.slateEdge,
+          depth: 4,
+          radius: 12,
+          forcePressed: selected && !disabled,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? AppColors.blue.withOpacity(0.15) : AppColors.bgCard,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: disabled
-                  ? AppColors.borderDim.withOpacity(0.4)
-                  : (selected ? AppColors.blue : AppColors.borderDim),
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: disabled
-                  ? AppColors.textSub.withOpacity(0.6)
-                  : (selected ? AppColors.blue : AppColors.textSub),
-              fontWeight: FontWeight.bold,
-              fontSize: 11,
-            ),
-          ),
+          onTap: disabled
+              ? () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Local leaderboard coming soon!')),
+                  )
+              : () => setState(() => _genderFilter = value),
+          child: BlockText(label, size: 11, stroke: 3,
+              color: disabled ? Colors.white54 : Colors.white),
         ),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            chip('GLOBAL', 'all'),
-            chip('BOYS', 'male'),
-            chip('GIRLS', 'female'),
-            chip('LOCAL 📍', 'local', disabled: true),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPodium(List<_LeaderboardEntry> top3) {
-    final first  = top3.isNotEmpty ? top3[0] : null;
-    final second = top3.length > 1 ? top3[1] : null;
-    final third  = top3.length > 2 ? top3[2] : null;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Expanded(child: second != null ? _podiumSlot(second, 2, AppColors.silver, 90) : const SizedBox()),
-          Expanded(child: first != null ? _podiumSlot(first, 1, AppColors.gold, 120) : const SizedBox()),
-          Expanded(child: third != null ? _podiumSlot(third, 3, AppColors.red, 74) : const SizedBox()),
+          chip('GLOBAL', 'all'),
+          chip('BOYS', 'male'),
+          chip('GIRLS', 'female'),
+          chip('LOCAL 📍', 'local', disabled: true),
         ],
       ),
     );
   }
 
-  Widget _podiumSlot(_LeaderboardEntry entry, int rank, Color color, double height) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (rank == 1) const Icon(Icons.emoji_events, color: AppColors.gold, size: 26),
-        const SizedBox(height: 4),
-        Stack(
-          alignment: Alignment.bottomRight,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: color, width: 2.5),
-                boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 10)],
-              ),
-              child: CircleAvatar(
-                radius: rank == 1 ? 32 : 26,
-                backgroundColor: AppColors.bgCard,
-                child: Text(
-                  entry.username.isNotEmpty ? entry.username[0].toUpperCase() : '?',
-                  style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: rank == 1 ? 24 : 18),
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              child: Text('$rank',
-                  style: const TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 11)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Text(entry.username,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: AppColors.textMain, fontWeight: FontWeight.bold, fontSize: 12)),
-        Text('LV ${entry.level}', style: const TextStyle(color: AppColors.textSub, fontSize: 10)),
-        const SizedBox(height: 6),
-        Container(
-          height: height,
-          width: double.infinity,
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [color.withOpacity(0.25), AppColors.bgCard],
-            ),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-            border: Border.all(color: color.withOpacity(0.5)),
-          ),
-          alignment: Alignment.topCenter,
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(
-            _formatXp(entry.xp),
-            style: TextStyle(color: color, fontWeight: FontWeight.w900, fontSize: 15),
-          ),
-        ),
-      ],
-    );
-  }
+  // ───────────────────────── player row ─────────────────────────
 
   Widget _buildRow(int rank, _LeaderboardEntry entry, bool isMe) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: isMe ? AppColors.blue.withOpacity(0.08) : AppColors.bgCard,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-            color: isMe ? AppColors.blue : AppColors.borderDim.withOpacity(0.4),
-            width: isMe ? 1.5 : 1),
-      ),
+    return Block(
+      color: isMe ? const Color(0xFF1E4A66) : Rb.slate,
+      edge: isMe ? Rb.blueEdge : Rb.slateEdge,
+      depth: 6,
+      radius: 16,
+      padding: const EdgeInsets.all(10),
       child: Row(
         children: [
-          SizedBox(
-            width: 28,
-            child: Text('#$rank',
-                style: TextStyle(
-                    color: isMe ? AppColors.blue : AppColors.textSub,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13)),
-          ),
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: AppColors.bgPanel,
-            child: Text(
-              entry.username.isNotEmpty ? entry.username[0].toUpperCase() : '?',
-              style: TextStyle(
-                  color: isMe ? AppColors.blue : AppColors.textMain,
-                  fontWeight: FontWeight.bold),
+          _RankTile(rank: rank),
+          const SizedBox(width: 10),
+          // framed bust thumbnail
+          Block(
+            color: const Color(0xFF8FD0FF),
+            edge: Colors.black,
+            depth: 3,
+            radius: 12,
+            padding: EdgeInsets.zero,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(9),
+              child: _BustThumb(data: entry.data, size: 66),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                BlockText(entry.username, size: 14, stroke: 3.5, maxLines: 1),
+                const SizedBox(height: 3),
                 Text(
-                  isMe ? '${entry.username} (You)' : entry.username,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: isMe ? AppColors.blue : AppColors.textMain,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13),
+                  'LV ${entry.level} · ${entry.totalKm.toStringAsFixed(1)} km',
+                  style: const TextStyle(
+                      color: Colors.white70, fontSize: 11, fontWeight: FontWeight.w800),
                 ),
-                Text('LV ${entry.level} · ${entry.totalKm.toStringAsFixed(1)} km',
-                    style: const TextStyle(color: AppColors.textSub, fontSize: 10)),
+                if (isMe)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: Block(
+                      color: Rb.blue,
+                      edge: Rb.blueEdge,
+                      depth: 2,
+                      radius: 6,
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                      child: const BlockText('YOU', size: 9, stroke: 2.5),
+                    ),
+                  ),
               ],
             ),
           ),
-          Text(_formatXp(entry.xp),
-              style: TextStyle(
-                  color: isMe ? AppColors.blue : AppColors.gold,
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14)),
+          const SizedBox(width: 8),
+          // massive score. Ranking is by XP; swap `score` for a steps field
+          // (and the Firestore orderBy) if you want a steps board.
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 104),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerRight,
+                  child: BlockText(_formatNum(entry.score),
+                      size: 26, stroke: 5, color: Rb.gold),
+                ),
+                const BlockText('XP', size: 10, stroke: 3),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
-  String _formatXp(int xp) =>
-      xp.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
+  static String _formatNum(int n) => n
+      .toString()
+      .replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]},');
 }
+
+// ───────────────────────── Rank trophy tile ─────────────────────────
+
+class _RankTile extends StatelessWidget {
+  final int rank;
+  const _RankTile({required this.rank});
+
+  static String _ordinal(int n) {
+    if (n % 100 >= 11 && n % 100 <= 13) return 'TH';
+    switch (n % 10) {
+      case 1: return 'ST';
+      case 2: return 'ND';
+      case 3: return 'RD';
+      default: return 'TH';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fill, edge;
+    switch (rank) {
+      case 1: fill = Rb.gold;   edge = Rb.goldEdge;   break;
+      case 2: fill = Rb.silver; edge = Rb.silverEdge; break;
+      case 3: fill = Rb.bronze; edge = Rb.bronzeEdge; break;
+      default: fill = Rb.slot;  edge = Rb.slateEdge;
+    }
+
+    return Block(
+      color: fill,
+      edge: edge,
+      depth: 4,
+      radius: 12,
+      gloss: rank <= 3,
+      padding: EdgeInsets.zero,
+      child: SizedBox(
+        width: 50,
+        height: 50,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              BlockText('$rank', size: 22, stroke: 4.5),
+              BlockText(_ordinal(rank), size: 9, stroke: 3),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ───────────────────────── Bust thumbnail ─────────────────────────
+
+/// Head-and-chest crop of the player's hero, so faces and hair stay readable
+/// in a small square. (A full 286x512 body would be tiny at this size.)
+class _BustThumb extends StatelessWidget {
+  final Map<String, dynamic> data;
+  final double size;
+  const _BustThumb({required this.data, required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipRect(
+        child: OverflowBox(
+          alignment: Alignment.topCenter,
+          minWidth: 0,
+          maxWidth: double.infinity,
+          minHeight: 0,
+          maxHeight: double.infinity,
+          child: Transform.translate(
+            offset: Offset(0, size * 0.2), // room for tall hair above the head
+            child: HeroSprite.fromData(data, height: size * 2.4),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ───────────────────────── Data ─────────────────────────
 
 class _LeaderboardEntry {
   final String uid;
@@ -369,14 +362,21 @@ class _LeaderboardEntry {
   final double totalKm;
   final String? gender;
 
+  /// Full user doc, passed to HeroSprite.fromData for the appearance fields.
+  final Map<String, dynamic> data;
+
   _LeaderboardEntry({
     required this.uid,
     required this.username,
     required this.level,
     required this.xp,
     required this.totalKm,
+    required this.data,
     this.gender,
   });
+
+  /// The number shown big on the right (the board is ranked by XP).
+  int get score => xp;
 
   factory _LeaderboardEntry.fromDoc(QueryDocumentSnapshot doc) {
     final d = doc.data() as Map<String, dynamic>;
@@ -387,6 +387,7 @@ class _LeaderboardEntry {
       xp: (d['xp'] as num?)?.toInt() ?? 0,
       totalKm: (d['total_km'] as num?)?.toDouble() ?? 0.0,
       gender: d['gender'] as String?,
+      data: d,
     );
   }
 }

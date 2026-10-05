@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/hero_sprite.dart';
+// TODO: adjust this path if your creation screen lives in a different folder.
+import '../character/character_creation_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   final VoidCallback? onBackTap;
@@ -105,6 +108,17 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
+  /// Opens the character editor; reloads the profile when the user comes back
+  /// so the hero shows the new look immediately.
+  Future<void> _editHero() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const CharacterCreationScreen(isEditMode: true),
+      ),
+    );
+    if (mounted) _loadUser();
+  }
+
   Future<void> _signOut() async {
     final confirm = await showDialog<bool>(
       context: context,
@@ -158,7 +172,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     final totalKm       = (_userData?['total_km']    ?? 0.0) as double;
     final sessions      = _userData?['total_sessions'] ?? 0;
     final steps         = _userData?['total_steps']    ?? 0;
-    final avatarUrl     = user?.photoURL;
 
     return Scaffold(
       backgroundColor: bgDeep,
@@ -170,7 +183,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               level    : level,
               xp       : xp,
               xpNeeded : xpNeeded,
-              avatarUrl: avatarUrl,
             ),
           ),
           SliverToBoxAdapter(child: _buildCombatPowerStrip()),
@@ -216,7 +228,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     required int level,
     required int xp,
     required int xpNeeded,
-    String? avatarUrl,
   }) {
     return Container(
       decoration: const BoxDecoration(
@@ -266,53 +277,68 @@ class _ProfileScreenState extends State<ProfileScreen>
             ],
           ),
           const SizedBox(height: 24),
-          Stack(
-            alignment: Alignment.bottomRight,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: const LinearGradient(
-                    colors: [green, teal],
-                    begin  : Alignment.topLeft,
-                    end    : Alignment.bottomRight,
+
+          // ── Hero sprite (tap to edit appearance) ──────────────
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _editHero,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  decoration: BoxDecoration(
+                    color: bgCard,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: green, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                          color       : green.withValues(alpha: 0.4),
+                          blurRadius  : 20,
+                          spreadRadius: 2),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                        color     : green.withValues(alpha: 0.4),
-                        blurRadius: 20,
-                        spreadRadius: 2),
-                  ],
+                  // 286:512 sprite, uniformly scaled by height (190 -> ~106 wide)
+                  child: HeroSprite.fromData(_userData, height: 190),
                 ),
-                child: CircleAvatar(
-                  radius         : 52,
-                  backgroundColor: bgCard,
-                  backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
-                  child: avatarUrl == null
-                      ? const Icon(Icons.person, color: green, size: 52)
-                      : null,
+                // Level badge
+                Positioned(
+                  right: -10,
+                  bottom: -10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color       : gold,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.5), blurRadius: 8)],
+                    ),
+                    child: Text(
+                      'LV $level',
+                      style: const TextStyle(
+                          color        : Colors.black,
+                          fontWeight   : FontWeight.w900,
+                          fontSize     : 11,
+                          letterSpacing: 1),
+                    ),
+                  ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color    : gold,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: gold.withValues(alpha: 0.5), blurRadius: 8)],
+                // "Tap to edit" hint
+                Positioned(
+                  top: -8,
+                  right: -8,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: green,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.edit, size: 14, color: Colors.white),
+                  ),
                 ),
-                child: Text(
-                  'LV $level',
-                  style: const TextStyle(
-                      color        : Colors.black,
-                      fontWeight   : FontWeight.w900,
-                      fontSize     : 11,
-                      letterSpacing: 1),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 22),
           Text(username,
               style: const TextStyle(
                   color        : textMain,

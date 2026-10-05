@@ -3,7 +3,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../run/run_tracking_screen.dart';
 import '../../models/daily_quest_definitions.dart';
-import '../../theme/app_colors.dart';
+import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
+import '../../widgets/avatar_preview.dart';
+import '../../widgets/block_ui.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback? onProfileTap;
@@ -14,11 +16,8 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  late AnimationController _portalController;
-  late AnimationController _pulseController;
   late AnimationController _entryController;
-  late Animation<double> _portalRotation;
-  late Animation<double> _portalGlow;
+  late AnimationController _idleController;
   late Animation<double> _entryFade;
   late Animation<Offset> _entrySlide;
 
@@ -26,25 +25,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
 
-    _portalController = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 8),
-    )..repeat();
-
-    _pulseController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1800),
-    )..repeat(reverse: true);
-
     _entryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     )..forward();
 
-    _portalRotation = Tween<double>(begin: 0, end: 1).animate(_portalController);
-    _portalGlow = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
+    // stepped idle bob for the avatar
+    _idleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
+
     _entryFade = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _entryController, curve: Curves.easeOut),
     );
@@ -56,9 +47,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    _portalController.dispose();
-    _pulseController.dispose();
     _entryController.dispose();
+    _idleController.dispose();
     super.dispose();
   }
 
@@ -102,20 +92,18 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       return const Scaffold(
-        backgroundColor: AppColors.bgDeep,
-        body: Center(child: CircularProgressIndicator(color: AppColors.blue)),
+        backgroundColor: Rb.bg,
+        body: Center(child: CircularProgressIndicator(color: Rb.green)),
       );
     }
 
     return Scaffold(
-      backgroundColor: AppColors.bgDeep,
+      backgroundColor: Rb.bg,
       body: StreamBuilder<DocumentSnapshot>(
         stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.blue),
-            );
+            return const Center(child: CircularProgressIndicator(color: Rb.green));
           }
 
           final data = snapshot.data!.exists
@@ -147,35 +135,35 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             opacity: _entryFade,
             child: SlideTransition(
               position: _entrySlide,
-              child: CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _buildTopBar(username: username, level: level),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildXPBar(xp: xp, xpForNext: xpForNext, xpProgress: xpProgress),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildStatsRow(
-                      totalKm: totalKm,
-                      sessions: sessions,
-                      stage: stage,
+              child: SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.of(context).padding.top + 12,
+                  16,
+                  24,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildHud(
+                      username: username,
+                      level: level,
+                      xp: xp,
+                      xpForNext: xpForNext,
+                      xpProgress: xpProgress,
                     ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildPortalSection(stage: stage),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildActiveQuests(
-                      dailyKm: dailyKm,
-                      claimedMap: claimedMap,
-                    ),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildRecentActivity(uid: uid, sessions: sessions),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                ],
+                    const SizedBox(height: 16),
+                    _buildStageHeader(stage),
+                    const SizedBox(height: 12),
+                    _buildPortal(stage: stage, data: data),
+                    const SizedBox(height: 14),
+                    _buildActionButton(),
+                    const SizedBox(height: 18),
+                    _buildQuests(dailyKm: dailyKm, claimedMap: claimedMap),
+                    const SizedBox(height: 12),
+                    _buildRecentActivity(uid: uid, sessions: sessions),
+                  ],
+                ),
               ),
             ),
           );
@@ -184,451 +172,305 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildTopBar({required String username, required int level}) {
-    return Container(
-      padding: EdgeInsets.only(
-        top: MediaQuery.of(context).padding.top + 12,
-        left: 16, right: 16, bottom: 12,
-      ),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.bgPanel,
-            AppColors.bgDeep.withOpacity(0),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: widget.onProfileTap,
-            child: Row(
-              children: [
-                Container(
-                  width: 42, height: 42,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [AppColors.borderDim, AppColors.bgCard],
-                    ),
-                    border: Border.all(color: AppColors.blue, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.blue.withOpacity(0.3),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.person, color: AppColors.blue, size: 20),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      username,
-                      style: const TextStyle(
-                        color: AppColors.textMain, fontSize: 15,
-                        fontWeight: FontWeight.w700, letterSpacing: 0.5,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppColors.blue.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(
-                              color: AppColors.blue.withOpacity(0.4),
-                            ),
-                          ),
-                          child: Text(
-                            'LVL $level',
-                            style: const TextStyle(
-                              color: AppColors.blue, fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'HERO',
-                          style: TextStyle(
-                            color: AppColors.textSub, fontSize: 10, letterSpacing: 1,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const Spacer(),
-        ],
-      ),
-    );
-  }
+  // ───────────────────────── HUD ─────────────────────────
 
-  Widget _buildXPBar({
+  Widget _buildHud({
+    required String username,
+    required int level,
     required int xp,
     required int xpForNext,
     required double xpProgress,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+    return Block(
+      color: Rb.hud,
+      edge: Rb.hudEdge,
+      depth: 6,
+      padding: const EdgeInsets.all(12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'EXP  $xp / $xpForNext',
-                style: const TextStyle(
-                  color: AppColors.textSub, fontSize: 11, letterSpacing: 0.5,
-                ),
-              ),
-              Text(
-                '${(xpProgress * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(
-                  color: AppColors.blue, fontSize: 11, fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Container(
-            height: 6,
-            decoration: BoxDecoration(
-              color: AppColors.borderDim,
-              borderRadius: BorderRadius.circular(3),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: xpProgress.clamp(0.0, 1.0),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.blue, AppColors.cyan],
-                  ),
-                  borderRadius: BorderRadius.circular(3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.blue.withOpacity(0.5),
-                      blurRadius: 6,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsRow({
-    required double totalKm,
-    required int sessions,
-    required _StageInfo stage,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Row(
-        children: [
-          _StatCard(
-            label: 'TOTAL KM',
-            value: totalKm.toStringAsFixed(1),
-            unit: 'km',
-            icon: Icons.route,
-            color: AppColors.blue,
-          ),
-          const SizedBox(width: 10),
-          _StatCard(
-            label: 'SESSIONS',
-            value: '$sessions',
-            unit: 'runs',
-            icon: Icons.flag,
-            color: AppColors.cyan,
-          ),
-          const SizedBox(width: 10),
-          _StatCard(
-            label: 'DUNGEON',
-            value: stage.id,
-            unit: 'stage',
-            icon: Icons.castle,
-            color: AppColors.gold,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPortalSection({required _StageInfo stage}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Text(
-                'DUNGEON ENTRANCE',
-                style: TextStyle(
-                  color: AppColors.textSub, fontSize: 11,
-                  letterSpacing: 2, fontWeight: FontWeight.w600,
-                ),
+              PressBlock(
+                color: Rb.blue,
+                edge: Rb.blueEdge,
+                depth: 4,
+                radius: 12,
+                padding: const EdgeInsets.all(8),
+                onTap: widget.onProfileTap,
+                child: const Icon(Icons.person, color: Colors.white, size: 26),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.gold.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.gold.withOpacity(0.3)),
-                ),
-                child: Text(
-                  'STAGE ${stage.id}',
-                  style: const TextStyle(
-                    color: AppColors.gold, fontSize: 10,
-                    fontWeight: FontWeight.w700, letterSpacing: 1,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: () {},
-            child: Container(
-              height: 200,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.borderDim, width: 1.5),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: Stack(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: RadialGradient(
-                        center: Alignment.center,
-                        radius: 0.8,
-                        colors: [AppColors.bgPanel, AppColors.bgDeep],
-                      ),
-                    ),
-                  ),
-                  CustomPaint(size: Size.infinite, painter: _GridPainter()),
-                  AnimatedBuilder(
-                    animation: _portalGlow,
-                    builder: (_, __) => Center(
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Container(
-                            width: 160, height: 160,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.purple
-                                      .withOpacity(0.15 * _portalGlow.value),
-                                  blurRadius: 40, spreadRadius: 20,
-                                ),
-                              ],
-                            ),
-                          ),
-                          AnimatedBuilder(
-                            animation: _portalRotation,
-                            builder: (_, __) => Transform.rotate(
-                              angle: _portalRotation.value * 2 * 3.14159,
-                              child: Container(
-                                width: 120, height: 120,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: AppColors.purple.withOpacity(0.6),
-                                    width: 2,
-                                  ),
-                                ),
-                                child: CustomPaint(painter: _DashedCirclePainter()),
-                              ),
-                            ),
-                          ),
-                          Container(
-                            width: 90, height: 90,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: RadialGradient(
-                                colors: [
-                                  Color.lerp(
-                                    AppColors.purple,
-                                    AppColors.blue,
-                                    _portalGlow.value,
-                                  )!,
-                                  AppColors.bgDeep,
-                                ],
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.purple
-                                      .withOpacity(0.5 * _portalGlow.value),
-                                  blurRadius: 20, spreadRadius: 5,
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              Icons.castle,
-                              color: Colors.white
-                                  .withOpacity(0.6 + 0.3 * _portalGlow.value),
-                              size: 36,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 16, left: 0, right: 0,
-                    child: Column(
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    BlockText(username, size: 18, maxLines: 1),
+                    const SizedBox(height: 6),
+                    Row(
                       children: [
-                        Text(
-                          stage.name,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: AppColors.purple, fontSize: 12,
-                            fontWeight: FontWeight.w700, letterSpacing: 2,
-                          ),
+                        Block(
+                          color: Rb.green,
+                          edge: Rb.greenEdge,
+                          depth: 3,
+                          radius: 8,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          child: BlockText('LVL $level', size: 11, stroke: 3),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          stage.hint,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: AppColors.textSub, fontSize: 10,
+                        const SizedBox(width: 8),
+                        const Padding(
+                          padding: EdgeInsets.only(bottom: 3),
+                          child: Text(
+                            'HERO',
+                            style: TextStyle(
+                              color: Color(0xFF2B2D2F),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.5,
+                            ),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  Positioned(
-                    top: 12, right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black45,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'TAP TO ENTER',
-                        style: TextStyle(
-                          color: Color(0xFF888888), fontSize: 9, letterSpacing: 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity, height: 56,
-            child: ElevatedButton(
-              onPressed: _onStartRun,
-              style: ElevatedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-              child: Ink(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.blue, AppColors.cyan],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.blue.withOpacity(0.35),
-                      blurRadius: 16, offset: const Offset(0, 4),
-                    ),
                   ],
-                ),
-                child: Container(
-                  alignment: Alignment.center,
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.directions_run, color: Colors.white, size: 22),
-                      SizedBox(width: 10),
-                      Text(
-                        'START RUN',
-                        style: TextStyle(
-                          color: Colors.white, fontSize: 16,
-                          fontWeight: FontWeight.w900, letterSpacing: 3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActiveQuests({
-    required double dailyKm,
-    required Map<String, dynamic> claimedMap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text(
-                'ACTIVE QUESTS',
-                style: TextStyle(
-                  color: AppColors.textSub, fontSize: 11,
-                  letterSpacing: 2, fontWeight: FontWeight.w600,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppColors.orange.withOpacity(0.4)),
-                ),
-                child: Text(
-                  '${kDailyQuests.length} ACTIVE',
-                  style: const TextStyle(
-                    color: AppColors.orange, fontSize: 9,
-                    fontWeight: FontWeight.w700, letterSpacing: 1,
-                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
+          Row(
+            children: [
+              BlockText('EXP $xp / $xpForNext', size: 11, stroke: 3),
+              const Spacer(),
+              BlockText('${(xpProgress * 100).toStringAsFixed(0)}%',
+                  size: 11, stroke: 3, color: Rb.neon),
+            ],
+          ),
+          const SizedBox(height: 6),
+          BlockBar(value: xpProgress, height: 22),
+        ],
+      ),
+    );
+  }
+
+  // ───────────────────────── stage header ─────────────────────────
+
+  Widget _buildStageHeader(_StageInfo stage) {
+    return Row(
+      children: [
+        const BlockText('DUNGEON ENTRANCE', size: 13, stroke: 3.5),
+        const Spacer(),
+        Block(
+          color: Rb.gold,
+          edge: Rb.goldEdge,
+          depth: 4,
+          radius: 10,
+          gloss: true,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          child: BlockText('⭐ STAGE ${stage.id}', size: 12, stroke: 3),
+        ),
+      ],
+    );
+  }
+
+  // ───────────────────────── portal viewport ─────────────────────────
+
+  Widget _buildPortal({
+    required _StageInfo stage,
+    required Map<String, dynamic> data,
+  }) {
+    final world = int.tryParse(stage.id.split('-').first) ?? 1;
+    final bgId = data['background_id'] as String?;
+    final reduce = MediaQuery.of(context).disableAnimations;
+
+    return LayoutBuilder(builder: (context, c) {
+      final w = c.maxWidth.clamp(0.0, 360.0).toDouble();
+      final h = w * 1.1;
+
+      return Center(
+        child: SizedBox(
+          width: w,
+          child: Column(
+            children: [
+              // wooden frame
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Container(
+                  height: h,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Rb.wood,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Rb.woodEdge, width: 3),
+                    boxShadow: const [BoxShadow(color: Rb.woodEdge, offset: Offset(0, 8))],
+                  ),
+                  child: Stack(
+                    children: [
+                      // inner viewport
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Rb.woodEdge, width: 3),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(11),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                BlockBackground(
+                                  id: bgId,
+                                  fallback: LandscapeTheme.forWorld(world),
+                                ),
+                                AnimatedBuilder(
+                                  animation: _idleController,
+                                  builder: (_, child) {
+                                    final dy = reduce
+                                        ? 0.0
+                                        : (_idleController.value < 0.5 ? 0.0 : -3.0);
+                                    return Transform.translate(
+                                        offset: Offset(0, dy), child: child);
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.only(top: 8, bottom: 4),
+                                    child: FittedBox(
+                                      fit: BoxFit.contain,
+                                      clipBehavior: Clip.none,
+                                      child: SizedBox(
+                                        width: kSpriteWidth,
+                                        height: kSpriteHeight + 48,
+                                        child: Stack(
+                                          clipBehavior: Clip.none,
+                                          children: [
+                                            // 44px headroom so tall hair isn't clipped
+                                            Positioned(
+                                              left: 0,
+                                              top: 44,
+                                              width: kSpriteWidth,
+                                              height: kSpriteHeight,
+                                              child: AvatarPreview.fromData(data),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      // metal nails in the corners
+                      for (final a in const [
+                        Alignment.topLeft,
+                        Alignment.topRight,
+                        Alignment.bottomLeft,
+                        Alignment.bottomRight,
+                      ])
+                        Align(
+                          alignment: a,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            margin: const EdgeInsets.all(1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD6D6D6),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Rb.woodEdge, width: 1.5),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              // name plate
+              Block(
+                color: Rb.slate,
+                edge: Rb.slateEdge,
+                depth: 5,
+                radius: 14,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Column(
+                    children: [
+                      BlockText(stage.name,
+                          size: 15, color: Rb.gold, align: TextAlign.center, maxLines: 1),
+                      const SizedBox(height: 4),
+                      Text(
+                        stage.hint,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    });
+  }
+
+  // ───────────────────────── action button ─────────────────────────
+
+  Widget _buildActionButton() {
+    return PressBlock(
+      color: Rb.neon,
+      edge: Rb.greenEdge,
+      depth: 10,
+      radius: 18,
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      onTap: _onStartRun,
+      child: const Center(child: BlockText('⚔️ ENTER DUNGEON', size: 24, stroke: 5)),
+    );
+  }
+
+  // ───────────────────────── quests ─────────────────────────
+
+  Widget _buildQuests({
+    required double dailyKm,
+    required Map<String, dynamic> claimedMap,
+  }) {
+    return Block(
+      color: Rb.slate,
+      edge: Rb.slateEdge,
+      depth: 6,
+      radius: 18,
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const BlockText('🎒 ACTIVE QUESTS', size: 14, stroke: 3.5),
+              const Spacer(),
+              Block(
+                color: Rb.orange,
+                edge: Rb.orangeEdge,
+                depth: 3,
+                radius: 8,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                child: BlockText('${kDailyQuests.length} ACTIVE', size: 10, stroke: 3),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           ...kDailyQuests.map((quest) {
-            final claimed  = claimedMap[quest.id] == true;
-            final progress = (dailyKm / quest.thresholdKm).clamp(0.0, 1.0);
-            return _QuestCard(
-              quest:    quest,
+            final claimed = claimedMap[quest.id] == true;
+            final progress = (dailyKm / quest.thresholdKm).clamp(0.0, 1.0).toDouble();
+            return _QuestSlot(
+              quest: quest,
               progress: progress,
-              claimed:  claimed,
-              dailyKm:  dailyKm,
+              claimed: claimed,
+              dailyKm: dailyKm,
             );
           }),
         ],
@@ -636,36 +478,40 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
+  // ───────────────────────── recent activity ─────────────────────────
+
   Widget _buildRecentActivity({required String uid, required int sessions}) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+    return Block(
+      color: Rb.slate,
+      edge: Rb.slateEdge,
+      depth: 6,
+      radius: 18,
+      padding: const EdgeInsets.all(12),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'RECENT ACTIVITY',
-            style: TextStyle(
-              color: AppColors.textSub, fontSize: 11,
-              letterSpacing: 2, fontWeight: FontWeight.w600,
-            ),
-          ),
+          const BlockText('📜 RECENT ACTIVITY', size: 14, stroke: 3.5),
           const SizedBox(height: 12),
           if (sessions == 0)
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.borderDim),
-              ),
+            Block(
+              color: Rb.slot,
+              edge: Rb.slateEdge,
+              depth: 4,
+              radius: 12,
+              padding: const EdgeInsets.all(16),
               child: const Center(
                 child: Column(
                   children: [
-                    Icon(Icons.directions_run, color: AppColors.borderDim, size: 32),
-                    SizedBox(height: 8),
+                    Text('🏃', style: TextStyle(fontSize: 30)),
+                    SizedBox(height: 6),
                     Text(
                       'No runs yet — start your first session!',
-                      style: TextStyle(color: AppColors.textSub, fontSize: 13),
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ],
                 ),
@@ -686,24 +532,26 @@ class _StageInfo {
   const _StageInfo(this.id, this.name, this.hint);
 }
 
-class _QuestCard extends StatelessWidget {
+// ───────────────────────── Quest slot ─────────────────────────
+
+class _QuestSlot extends StatelessWidget {
   final DailyQuest quest;
   final double progress;
   final bool claimed;
   final double dailyKm;
 
-  const _QuestCard({
+  const _QuestSlot({
     required this.quest,
     required this.progress,
     required this.claimed,
     required this.dailyKm,
   });
 
-  Color get _progressColor {
-    if (claimed) return AppColors.textSub;
-    if (progress >= 1.0) return AppColors.blue;
-    if (progress >= 0.5) return AppColors.gold;
-    return AppColors.orange;
+  Color get _color {
+    if (claimed) return Rb.silverEdge;
+    if (progress >= 1.0) return Rb.green;
+    if (progress >= 0.5) return Rb.gold;
+    return Rb.orange;
   }
 
   @override
@@ -711,70 +559,54 @@ class _QuestCard extends StatelessWidget {
     final kmText =
         '${dailyKm.toStringAsFixed(2)} / ${quest.thresholdKm.toStringAsFixed(1)} km';
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: claimed
-              ? AppColors.borderDim
-              : _progressColor.withOpacity(0.3),
-        ),
-      ),
+    return Block(
+      color: Rb.slot,
+      edge: Rb.slateEdge,
+      depth: 4,
+      radius: 12,
+      padding: const EdgeInsets.all(10),
       child: Row(
         children: [
-          Container(
-            width: 38, height: 38,
-            decoration: BoxDecoration(
-              color: _progressColor.withOpacity(claimed ? 0.06 : 0.12),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: _progressColor.withOpacity(claimed ? 0.2 : 0.35),
+          // inventory slot icon
+          Block(
+            color: _color,
+            edge: Rb.slateEdge,
+            depth: 3,
+            radius: 10,
+            padding: EdgeInsets.zero,
+            child: SizedBox(
+              width: 44,
+              height: 44,
+              child: Center(
+                child: claimed
+                    ? const Icon(Icons.check, color: Colors.white, size: 24)
+                    : Icon(quest.icon, color: Colors.white, size: 24),
               ),
             ),
-            child: claimed
-                ? const Icon(Icons.check, color: AppColors.textSub, size: 18)
-                : Icon(quest.icon, color: _progressColor, size: 18),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Text(
-                      quest.title,
-                      style: TextStyle(
-                        color: claimed
-                            ? AppColors.textSub
-                            : AppColors.textMain,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Expanded(
+                      child: BlockText(quest.title, size: 13, stroke: 3, maxLines: 1),
                     ),
-                    const Spacer(),
-                    Container(
+                    const SizedBox(width: 6),
+                    Block(
+                      color: claimed ? Rb.silverEdge : Rb.blue,
+                      edge: claimed ? Rb.slateEdge : Rb.blueEdge,
+                      depth: 2,
+                      radius: 6,
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: claimed
-                            ? AppColors.borderDim
-                            : AppColors.cyan.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(5),
-                      ),
-                      child: Text(
+                      child: BlockText(
                         claimed
                             ? '✓ ${quest.crystalReward} 💎'
                             : '+${quest.crystalReward} 💎',
-                        style: TextStyle(
-                          color: claimed
-                              ? AppColors.textSub
-                              : AppColors.cyan,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        size: 10,
+                        stroke: 2.5,
                       ),
                     ),
                   ],
@@ -782,55 +614,27 @@ class _QuestCard extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   claimed ? 'Completed today!' : quest.description,
-                  style: TextStyle(
-                    color: claimed
-                        ? AppColors.textSub.withOpacity(0.7)
-                        : AppColors.textSub,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white70,
                     fontSize: 11,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
+                if (!claimed) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    kmText,
+                    style: TextStyle(
+                      color: _color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 6),
-                if (!claimed)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      kmText,
-                      style: TextStyle(
-                        color: _progressColor.withOpacity(0.8),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                Stack(
-                  children: [
-                    Container(
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.borderDim,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    FractionallySizedBox(
-                      widthFactor: progress,
-                      child: Container(
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: _progressColor,
-                          borderRadius: BorderRadius.circular(2),
-                          boxShadow: claimed
-                              ? []
-                              : [
-                                  BoxShadow(
-                                    color: _progressColor.withOpacity(0.4),
-                                    blurRadius: 4,
-                                  ),
-                                ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                BlockBar(value: claimed ? 1 : progress, height: 12, color: _color),
               ],
             ),
           ),
@@ -839,6 +643,8 @@ class _QuestCard extends StatelessWidget {
     );
   }
 }
+
+// ───────────────────────── Recent activity rows ─────────────────────────
 
 class _RecentActivityList extends StatelessWidget {
   final String uid;
@@ -856,59 +662,69 @@ class _RecentActivityList extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-          return Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: AppColors.bgCard,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.borderDim),
-            ),
-            child: const Text(
+          return const Block(
+            color: Rb.slot,
+            edge: Rb.slateEdge,
+            depth: 4,
+            radius: 12,
+            padding: EdgeInsets.all(14),
+            child: Text(
               'Activity history coming soon',
-              style: TextStyle(color: AppColors.textSub, fontSize: 13),
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           );
         }
 
         return Column(
           children: snapshot.data!.docs.map((doc) {
-            final s     = _parseSession(doc);
-            final color = _colorForType(s['type'] as String);
-            return Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withOpacity(0.2)),
-              ),
+            final s = _parseSession(doc);
+            final type = s['type'] as String;
+            final color = _colorForType(type);
+            return Block(
+              color: Rb.slot,
+              edge: Rb.slateEdge,
+              depth: 4,
+              radius: 12,
+              padding: const EdgeInsets.all(10),
               child: Row(
                 children: [
-                  Text(_emojiForType(s['type'] as String),
-                      style: const TextStyle(fontSize: 20)),
+                  Block(
+                    color: color,
+                    edge: Rb.slateEdge,
+                    depth: 3,
+                    radius: 10,
+                    padding: EdgeInsets.zero,
+                    child: SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Center(
+                        child: Text(_emojiForType(type), style: const TextStyle(fontSize: 20)),
+                      ),
+                    ),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          (s['type'] as String).toUpperCase(),
-                          style: TextStyle(
-                              color: color, fontSize: 12, fontWeight: FontWeight.w700),
-                        ),
+                        BlockText(type.toUpperCase(), size: 13, stroke: 3),
+                        const SizedBox(height: 2),
                         Text(
                           '${(s['distanceKm'] as double).toStringAsFixed(2)} km  •  ${s['duration']}',
                           style: const TextStyle(
-                              color: AppColors.textSub, fontSize: 11),
+                            color: Colors.white70,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  Text(
-                    '+${s['xp']} XP',
-                    style: const TextStyle(
-                        color: AppColors.gold, fontSize: 11, fontWeight: FontWeight.w700),
-                  ),
+                  BlockText('+${s['xp']} XP', size: 12, stroke: 3, color: Rb.gold),
                 ],
               ),
             );
@@ -919,21 +735,21 @@ class _RecentActivityList extends StatelessWidget {
   }
 
   Map<String, dynamic> _parseSession(DocumentSnapshot doc) {
-    final d    = doc.data() as Map<String, dynamic>;
+    final d = doc.data() as Map<String, dynamic>;
     final secs = (d['durationSeconds'] as num).toInt();
     return {
-      'type':       d['type'] as String? ?? 'run',
+      'type': d['type'] as String? ?? 'run',
       'distanceKm': (d['distanceKm'] as num).toDouble(),
-      'duration':   '${secs ~/ 60}m ${secs % 60}s',
-      'xp':         (d['xpEarned'] as num).toInt(),
+      'duration': '${secs ~/ 60}m ${secs % 60}s',
+      'xp': (d['xpEarned'] as num).toInt(),
     };
   }
 
   Color _colorForType(String type) {
     switch (type) {
-      case 'walk': return AppColors.cyan;
-      case 'jog':  return AppColors.gold;
-      default:     return AppColors.blue;
+      case 'walk': return Rb.green;
+      case 'jog':  return Rb.blue;
+      default:     return Rb.orange;
     }
   }
 
@@ -941,104 +757,7 @@ class _RecentActivityList extends StatelessWidget {
     switch (type) {
       case 'walk': return '🚶';
       case 'jog':  return '🏃';
-      default:     return '⚡';
+      default:     return '🔥';
     }
   }
-}
-
-class _StatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final String unit;
-  final IconData icon;
-  final Color color;
-
-  const _StatCard({
-    required this.label,
-    required this.value,
-    required this.unit,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(height: 6),
-            Text(value,
-                style: TextStyle(
-                    color: color, fontSize: 18, fontWeight: FontWeight.w800)),
-            Text(unit,
-                style: const TextStyle(color: AppColors.textSub, fontSize: 10)),
-            const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(
-                    color: AppColors.textSub, fontSize: 9, letterSpacing: 0.5)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.borderDim.withOpacity(0.3)
-      ..strokeWidth = 0.5;
-    for (double x = 0; x < size.width; x += 32) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
-    }
-    for (double y = 0; y < size.height; y += 32) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
-}
-
-class _DashedCirclePainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = AppColors.purple.withOpacity(0.5)
-      ..strokeWidth = 1.5
-      ..style = PaintingStyle.stroke;
-
-    const dashCount   = 16;
-    const gapFraction = 0.4;
-    const pi2         = 2 * 3.14159265;
-    final r  = size.width / 2;
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final dashLen = pi2 / dashCount * (1 - gapFraction);
-    final gapLen  = pi2 / dashCount * gapFraction;
-
-    double angle = 0;
-    for (int i = 0; i < dashCount; i++) {
-      final path = Path();
-      path.addArc(
-        Rect.fromCircle(center: Offset(cx, cy), radius: r),
-        angle, dashLen,
-      );
-      canvas.drawPath(path, paint);
-      angle += dashLen + gapLen;
-    }
-  }
-
-  @override
-  bool shouldRepaint(_) => false;
 }
