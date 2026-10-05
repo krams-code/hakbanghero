@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../models/activity_model.dart';
 import '../../theme/app_colors.dart';
 
+
 class ActivityScreen extends StatefulWidget {
   const ActivityScreen({super.key});
 

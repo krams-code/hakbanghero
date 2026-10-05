@@ -1,18 +1,25 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' hide ActivityType;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../models/activity_model.dart';
 import '../../models/daily_quest_definitions.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/prerun_view.dart';
-// ─────────────────────────────────────────────────────────────────────────────
-//  Pre-run: user picks activity type, then tracking begins
-// ─────────────────────────────────────────────────────────────────────────────
+import '../widgets/warmup_view.dart';
+
 class RunTrackingScreen extends StatefulWidget {
-  const RunTrackingScreen({super.key});
+  final VoidCallback? onExit;
+
+  const RunTrackingScreen({
+    super.key,
+    this.onExit,
+  });
 
   @override
   State<RunTrackingScreen> createState() => _RunTrackingScreenState();
@@ -23,46 +30,70 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
   // ── State machine ──────────────────────────────────────────────────────────
   _Phase _phase = _Phase.preRun;
+
   ActivityType _userPick = ActivityType.run;
 
   // ── GPS / tracking ─────────────────────────────────────────────────────────
   StreamSubscription<Position>? _positionSub;
+
   Position? _lastPosition;
+
   double _distanceKm = 0;
   double _currentSpeedKmh = 0;
   double _maxSpeedKmh = 0;
+
   final List<double> _speedSamples = [];
   final List<Map<String, double>> _routePoints = [];
 
   // ── Timer ──────────────────────────────────────────────────────────────────
   Timer? _timer;
+
   int _elapsedSeconds = 0;
+
   bool _isPaused = false;
 
   // ── Animations ─────────────────────────────────────────────────────────────
   late AnimationController _pulseCtrl;
   late Animation<double> _pulse;
+
   late AnimationController _fadeCtrl;
   late Animation<double> _fade;
 
   // ── Saving ─────────────────────────────────────────────────────────────────
   bool _isSaving = false;
 
-  // Quests completed during this save (shown in summary)
+  // Quests completed during this save
   List<DailyQuest> _newlyCompletedQuests = [];
 
   @override
   void initState() {
     super.initState();
+
     _pulseCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 1200))
-      ..repeat(reverse: true);
-    _pulse = Tween<double>(begin: 0.85, end: 1.0)
-        .animate(CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut));
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+
+    _pulse = Tween<double>(
+      begin: 0.85,
+      end: 1.0,
+    ).animate(
+      CurvedAnimation(
+        parent: _pulseCtrl,
+        curve: Curves.easeInOut,
+      ),
+    );
 
     _fadeCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 500));
-    _fade = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
+    _fade = CurvedAnimation(
+      parent: _fadeCtrl,
+      curve: Curves.easeOut,
+    );
+
     _fadeCtrl.forward();
   }
 
@@ -70,23 +101,33 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   void dispose() {
     _positionSub?.cancel();
     _timer?.cancel();
+
     _pulseCtrl.dispose();
     _fadeCtrl.dispose();
+
     super.dispose();
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
   ActivityType get _detectedType =>
       ActivityTypeExt.fromSpeed(_currentSpeedKmh);
 
   ActivityType get _effectiveType =>
-      _currentSpeedKmh > 0.5 ? _detectedType : _userPick;
+      _currentSpeedKmh > 0.5
+          ? _detectedType
+          : _userPick;
 
   Color get _activityColor {
     switch (_effectiveType) {
-      case ActivityType.walk: return AppColors.cyan;
-      case ActivityType.jog:  return AppColors.gold;
-      case ActivityType.run:  return AppColors.blue;
+      case ActivityType.walk:
+        return AppColors.cyan;
+
+      case ActivityType.jog:
+        return AppColors.gold;
+
+      case ActivityType.run:
+        return AppColors.blue;
     }
   }
 
@@ -94,65 +135,149 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     final h = _elapsedSeconds ~/ 3600;
     final m = (_elapsedSeconds % 3600) ~/ 60;
     final s = _elapsedSeconds % 60;
+
     if (h > 0) {
-      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+      return '${h.toString().padLeft(2, '0')}:'
+          '${m.toString().padLeft(2, '0')}:'
+          '${s.toString().padLeft(2, '0')}';
     }
-    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+
+    return '${m.toString().padLeft(2, '0')}:'
+        '${s.toString().padLeft(2, '0')}';
   }
 
   String get _pace {
-    if (_distanceKm <= 0 || _elapsedSeconds <= 0) return '--:--';
+    if (_distanceKm <= 0 || _elapsedSeconds <= 0) {
+      return '--:--';
+    }
+
     final secsPerKm = _elapsedSeconds / _distanceKm;
+
     final m = secsPerKm ~/ 60;
     final s = (secsPerKm % 60).toInt();
+
     return "${m}'${s.toString().padLeft(2, '0')}\"";
   }
 
   double get _avgSpeed {
-    if (_speedSamples.isEmpty) return 0;
-    return _speedSamples.reduce((a, b) => a + b) / _speedSamples.length;
+    if (_speedSamples.isEmpty) {
+      return 0;
+    }
+
+    return _speedSamples.reduce((a, b) => a + b) /
+        _speedSamples.length;
   }
 
-  // ── Permissions & Start ────────────────────────────────────────────────────
+  // ── EXIT ───────────────────────────────────────────────────────────────────
+
+  void _exitRunScreen() {
+    _positionSub?.cancel();
+    _timer?.cancel();
+
+    if (widget.onExit != null) {
+      widget.onExit!();
+    }
+  }
+
+  // ── PRE-RUN → WARM-UP ─────────────────────────────────────────────────────
+
+  void _startWarmUp() {
+    setState(() {
+      _phase = _Phase.warmUp;
+    });
+  }
+
+  void _skipWarmUp() {
+    _startTracking();
+  }
+
+  // ── Permissions ────────────────────────────────────────────────────────────
+
   Future<bool> _requestPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    final serviceEnabled =
+        await Geolocator.isLocationServiceEnabled();
+
     if (!serviceEnabled) {
-      if (mounted) _showSnack('Please enable GPS/Location services on your device.');
+      if (mounted) {
+        _showSnack(
+          'Please enable GPS/Location services on your device.',
+        );
+      }
+
       return false;
     }
-    LocationPermission permission = await Geolocator.checkPermission();
+
+    LocationPermission permission =
+        await Geolocator.checkPermission();
+
     if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+      permission =
+          await Geolocator.requestPermission();
+
       if (permission == LocationPermission.denied) {
-        if (mounted) _showSnack('Location permission denied.');
+        if (mounted) {
+          _showSnack('Location permission denied.');
+        }
+
         return false;
       }
     }
+
     if (permission == LocationPermission.deniedForever) {
-      if (mounted) _showSnack('Location permission permanently denied. Enable it in settings.');
+      if (mounted) {
+        _showSnack(
+          'Location permission permanently denied. '
+          'Enable it in settings.',
+        );
+      }
+
       return false;
     }
+
     return true;
   }
 
+  // ── START TRACKING ─────────────────────────────────────────────────────────
+
   Future<void> _startTracking() async {
     final granted = await _requestPermission();
-    if (!granted) return;
+
+    if (!granted) {
+      return;
+    }
+
+    _positionSub?.cancel();
+    _timer?.cancel();
 
     setState(() {
       _phase = _Phase.tracking;
+
       _distanceKm = 0;
       _currentSpeedKmh = 0;
       _maxSpeedKmh = 0;
+
       _elapsedSeconds = 0;
+
       _isPaused = false;
+
       _speedSamples.clear();
       _routePoints.clear();
+
+      _lastPosition = null;
+
+      _newlyCompletedQuests = [];
     });
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!_isPaused && mounted) setState(() => _elapsedSeconds++);
-    });
+    _timer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) {
+        if (!_isPaused && mounted) {
+          setState(() {
+            _elapsedSeconds++;
+          });
+        }
+      },
+    );
 
     const locationSettings = LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
@@ -161,34 +286,57 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
     _positionSub = Geolocator.getPositionStream(
       locationSettings: locationSettings,
-    ).listen((Position pos) {
-      if (!mounted || _isPaused) return;
-      final speedKmh = (pos.speed * 3.6).clamp(0.0, 60.0);
-
-      if (_lastPosition != null) {
-        final delta = Geolocator.distanceBetween(
-          _lastPosition!.latitude,
-          _lastPosition!.longitude,
-          pos.latitude,
-          pos.longitude,
-        ) / 1000.0;
-
-        if (delta > 0.002 && delta < 0.05) {
-          setState(() {
-            _distanceKm += delta;
-            _currentSpeedKmh = speedKmh;
-            if (speedKmh > _maxSpeedKmh) _maxSpeedKmh = speedKmh;
-            _speedSamples.add(speedKmh);
-            _routePoints.add({'lat': pos.latitude, 'lng': pos.longitude});
-          });
+    ).listen(
+      (Position pos) {
+        if (!mounted || _isPaused) {
+          return;
         }
-      }
-      _lastPosition = pos;
-    });
+
+        final speedKmh =
+            (pos.speed * 3.6).clamp(0.0, 60.0);
+
+        if (_lastPosition != null) {
+          final delta = Geolocator.distanceBetween(
+                _lastPosition!.latitude,
+                _lastPosition!.longitude,
+                pos.latitude,
+                pos.longitude,
+              ) /
+              1000.0;
+
+          // Ignore GPS noise and impossible jumps.
+          if (delta > 0.002 && delta < 0.05) {
+            setState(() {
+              _distanceKm += delta;
+
+              _currentSpeedKmh = speedKmh;
+
+              if (speedKmh > _maxSpeedKmh) {
+                _maxSpeedKmh = speedKmh;
+              }
+
+              _speedSamples.add(speedKmh);
+
+              _routePoints.add({
+                'lat': pos.latitude,
+                'lng': pos.longitude,
+              });
+            });
+          }
+        }
+
+        _lastPosition = pos;
+      },
+    );
   }
 
+  // ── PAUSE ──────────────────────────────────────────────────────────────────
+
   void _togglePause() {
-    setState(() => _isPaused = !_isPaused);
+    setState(() {
+      _isPaused = !_isPaused;
+    });
+
     if (_isPaused) {
       _positionSub?.pause();
     } else {
@@ -196,22 +344,35 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     }
   }
 
-  // ── Stop & Save (with daily quest transaction) ─────────────────────────────
+  // ── STOP & SAVE ────────────────────────────────────────────────────────────
+
   Future<void> _stopAndSave() async {
     _positionSub?.cancel();
     _timer?.cancel();
 
-    // Determine final activity type by majority vote of speed samples
+    // Determine final activity type by majority vote of speed samples.
     ActivityType finalType = _userPick;
+
     if (_speedSamples.isNotEmpty) {
-      int walkCount = 0, jogCount = 0, runCount = 0;
-      for (final s in _speedSamples) {
-        final t = ActivityTypeExt.fromSpeed(s);
-        if (t == ActivityType.walk) walkCount++;
-        else if (t == ActivityType.jog) jogCount++;
-        else runCount++;
+      int walkCount = 0;
+      int jogCount = 0;
+      int runCount = 0;
+
+      for (final speed in _speedSamples) {
+        final type =
+            ActivityTypeExt.fromSpeed(speed);
+
+        if (type == ActivityType.walk) {
+          walkCount++;
+        } else if (type == ActivityType.jog) {
+          jogCount++;
+        } else {
+          runCount++;
+        }
       }
-      if (runCount >= jogCount && runCount >= walkCount) {
+
+      if (runCount >= jogCount &&
+          runCount >= walkCount) {
         finalType = ActivityType.run;
       } else if (jogCount >= walkCount) {
         finalType = ActivityType.jog;
@@ -220,23 +381,41 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       }
     }
 
-    final xp    = (_distanceKm * 100 + _elapsedSeconds / 60 * 5).toInt();
-    final coins = (_distanceKm * 10).toInt();
-    final sessionStart = DateTime.now().subtract(Duration(seconds: _elapsedSeconds));
+    final xp =
+        (_distanceKm * 100 +
+                _elapsedSeconds / 60 * 5)
+            .toInt();
+
+    final coins =
+        (_distanceKm * 10).toInt();
+
+    final sessionStart =
+        DateTime.now().subtract(
+      Duration(seconds: _elapsedSeconds),
+    );
 
     final session = ActivitySession(
-      id:              '',
-      type:            finalType,
-      userPick:        _userPick,
-      startTime:       sessionStart,
-      endTime:         DateTime.now(),
-      distanceKm:      double.parse(_distanceKm.toStringAsFixed(3)),
+      id: '',
+      type: finalType,
+      userPick: _userPick,
+      startTime: sessionStart,
+      endTime: DateTime.now(),
+      distanceKm:
+          double.parse(
+        _distanceKm.toStringAsFixed(3),
+      ),
       durationSeconds: _elapsedSeconds,
-      avgSpeedKmh:     double.parse(_avgSpeed.toStringAsFixed(2)),
-      maxSpeedKmh:     double.parse(_maxSpeedKmh.toStringAsFixed(2)),
-      xpEarned:        xp,
-      coinsEarned:     coins,
-      routePoints:     _routePoints,
+      avgSpeedKmh:
+          double.parse(
+        _avgSpeed.toStringAsFixed(2),
+      ),
+      maxSpeedKmh:
+          double.parse(
+        _maxSpeedKmh.toStringAsFixed(2),
+      ),
+      xpEarned: xp,
+      coinsEarned: coins,
+      routePoints: _routePoints,
     );
 
     setState(() {
@@ -245,93 +424,166 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     });
 
     try {
-      final user = FirebaseAuth.instance.currentUser;
+      final user =
+          FirebaseAuth.instance.currentUser;
+
       if (user != null) {
-        final db      = FirebaseFirestore.instance;
-        final userRef = db.collection('users').doc(user.uid);
-        final actRef  = userRef.collection('activities');
+        final db =
+            FirebaseFirestore.instance;
 
-        // 1. Save the activity document
-        await actRef.add(session.toFirestore());
+        final userRef =
+            db.collection('users').doc(user.uid);
 
-        // 2. Update base user totals (xp, coins, km, sessions)
+        final actRef =
+            userRef.collection('activities');
+
+        // 1. Save activity document.
+        await actRef.add(
+          session.toFirestore(),
+        );
+
+        // 2. Update user totals.
         await userRef.update({
-          'total_km':       FieldValue.increment(session.distanceKm),
-          'total_sessions': FieldValue.increment(1),
-          'xp':             FieldValue.increment(xp),
-          'coins':          FieldValue.increment(coins),
+          'total_km':
+              FieldValue.increment(
+            session.distanceKm,
+          ),
+          'total_sessions':
+              FieldValue.increment(1),
+          'xp':
+              FieldValue.increment(xp),
+          'coins':
+              FieldValue.increment(coins),
         });
 
-        // 3. Daily quest progress transaction
-        final todayStr = _todayDateString();
-        final completedQuests = <DailyQuest>[];
+        // 3. Daily quest transaction.
+        final todayStr =
+            _todayDateString();
 
-        await db.runTransaction((txn) async {
-          final snap = await txn.get(userRef);
-          final data = snap.data() ?? {};
+        final completedQuests =
+            <DailyQuest>[];
 
-          // ── Read existing daily progress ──────────────────────────────────
-          final storedDate = data['daily_progress_date'] as String? ?? '';
-          double dailyKm   = (data['daily_progress_km'] as num?)?.toDouble() ?? 0.0;
-          Map<String, dynamic> claimedMap =
-              Map<String, dynamic>.from(data['daily_quests_claimed'] as Map? ?? {});
+        await db.runTransaction(
+          (txn) async {
+            final snap =
+                await txn.get(userRef);
 
-          // ── Reset if it's a new day ───────────────────────────────────────
-          if (storedDate != todayStr) {
-            dailyKm   = 0.0;
-            claimedMap = {};
-          }
+            final data =
+                snap.data() ?? {};
 
-          // ── Add this session's distance ───────────────────────────────────
-          dailyKm += session.distanceKm;
+            final storedDate =
+                data['daily_progress_date']
+                        as String? ??
+                    '';
 
-          // ── Check quest thresholds ────────────────────────────────────────
-          int crystalsToAdd = 0;
-          for (final quest in kDailyQuests) {
-            if (claimedMap[quest.id] == true) continue; // already claimed today
+            double dailyKm =
+                (data['daily_progress_km']
+                            as num?)
+                        ?.toDouble() ??
+                    0.0;
 
-            // Time-gated quests (e.g. before 9 AM): check session start hour
-            if (quest.beforeHour != null &&
-                sessionStart.hour >= quest.beforeHour!) {
-              continue; // session started too late for this quest
+            Map<String, dynamic> claimedMap =
+                Map<String, dynamic>.from(
+              data['daily_quests_claimed']
+                      as Map? ??
+                  {},
+            );
+
+            // Reset daily progress.
+            if (storedDate != todayStr) {
+              dailyKm = 0.0;
+              claimedMap = {};
             }
 
-            if (dailyKm >= quest.thresholdKm) {
-              claimedMap[quest.id] = true;
-              crystalsToAdd += quest.crystalReward;
-              completedQuests.add(quest);
+            // Add session distance.
+            dailyKm +=
+                session.distanceKm;
+
+            int crystalsToAdd = 0;
+
+            // Check quest thresholds.
+            for (final quest
+                in kDailyQuests) {
+              if (claimedMap[quest.id] ==
+                  true) {
+                continue;
+              }
+
+              if (quest.beforeHour != null &&
+                  sessionStart.hour >=
+                      quest.beforeHour!) {
+                continue;
+              }
+
+              if (dailyKm >=
+                  quest.thresholdKm) {
+                claimedMap[quest.id] =
+                    true;
+
+                crystalsToAdd +=
+                    quest.crystalReward;
+
+                completedQuests.add(
+                  quest,
+                );
+              }
             }
-          }
 
-          // ── Write everything back in one transaction ──────────────────────
-          final Map<String, dynamic> updates = {
-            'daily_progress_km':     dailyKm,
-            'daily_progress_date':   todayStr,
-            'daily_quests_claimed':  claimedMap,
-          };
-          if (crystalsToAdd > 0) {
-            updates['gems'] = FieldValue.increment(crystalsToAdd);
-          }
-          txn.update(userRef, updates);
-        });
+            final Map<String, dynamic>
+                updates = {
+              'daily_progress_km':
+                  dailyKm,
+              'daily_progress_date':
+                  todayStr,
+              'daily_quests_claimed':
+                  claimedMap,
+            };
 
-        _newlyCompletedQuests = completedQuests;
+            if (crystalsToAdd > 0) {
+              updates['gems'] =
+                  FieldValue.increment(
+                crystalsToAdd,
+              );
+            }
+
+            txn.update(
+              userRef,
+              updates,
+            );
+          },
+        );
+
+        _newlyCompletedQuests =
+            completedQuests;
       }
     } catch (e) {
-      debugPrint('Error saving activity: $e');
+      debugPrint(
+        'Error saving activity: $e',
+      );
     }
 
-    if (mounted) setState(() => _isSaving = false);
+    if (mounted) {
+      setState(() {
+        _isSaving = false;
+      });
+    }
+
     _showSummarySheet(session);
   }
 
-  /// Returns today's date as 'YYYY-MM-DD' in local time.
   String _todayDateString() {
     final now = DateTime.now();
-    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+    return '${now.year}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
   }
 
-  void _showSummarySheet(ActivitySession session) {
+  // ── SUMMARY ────────────────────────────────────────────────────────────────
+
+  void _showSummarySheet(
+    ActivitySession session,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -340,88 +592,190 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       builder: (_) => _SummarySheet(
         session: session,
         isSaving: _isSaving,
-        completedQuests: _newlyCompletedQuests,
+        completedQuests:
+            _newlyCompletedQuests,
         onDone: () {
           Navigator.of(context).pop();
-          Navigator.of(context).pop();
+
+          // Do NOT Navigator.pop() the RunTrackingScreen.
+          // It lives inside MainShell's IndexedStack.
+          if (mounted) {
+            setState(() {
+              _phase = _Phase.preRun;
+              _distanceKm = 0;
+              _currentSpeedKmh = 0;
+              _maxSpeedKmh = 0;
+              _elapsedSeconds = 0;
+              _isPaused = false;
+              _lastPosition = null;
+              _speedSamples.clear();
+              _routePoints.clear();
+            });
+          }
         },
       ),
     );
   }
 
   void _showSnack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: AppColors.borderDim),
+    ScaffoldMessenger.of(context)
+        .showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor:
+            AppColors.borderDim,
+      ),
     );
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
+  // ── BUILD ──────────────────────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDeep,
       body: FadeTransition(
         opacity: _fade,
-        child: _phase == _Phase.preRun ? _buildPreRun() : _buildTracking(),
+        child: _buildCurrentPhase(),
       ),
     );
   }
 
-  // ── Pre-run picker ─────────────────────────────────────────────────────────
-       Widget _buildPreRun() => PreRunView(
-           selected: _userPick,
-           onSelect: (t) => setState(() => _userPick = t),
-           onBack: () => Navigator.of(context).pop(),
-           onStart: _startTracking,
-         );
+  Widget _buildCurrentPhase() {
+    switch (_phase) {
+      case _Phase.preRun:
+        return _buildPreRun();
 
-  // ── Active tracking ────────────────────────────────────────────────────────
+      case _Phase.warmUp:
+        return WarmUpView(
+          onComplete: _startTracking,
+          onSkip: _skipWarmUp,
+        );
+
+      case _Phase.tracking:
+        return _buildTracking();
+
+      case _Phase.summary:
+        return const SizedBox.shrink();
+    }
+  }
+
+  // ── PRE-RUN ────────────────────────────────────────────────────────────────
+
+  Widget _buildPreRun() {
+    return PreRunView(
+      selected: _userPick,
+      onSelect: (type) {
+        setState(() {
+          _userPick = type;
+        });
+      },
+      onBack: _exitRunScreen,
+      onStart: _startWarmUp,
+    );
+  }
+
+  // ── ACTIVE TRACKING ────────────────────────────────────────────────────────
+
   Widget _buildTracking() {
     return SafeArea(
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding:
+                const EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              0,
+            ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _activityColor.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _activityColor.withOpacity(0.3)),
+                  padding:
+                      const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration:
+                      BoxDecoration(
+                    color: _activityColor
+                        .withOpacity(0.12),
+                    borderRadius:
+                        BorderRadius.circular(
+                      10,
+                    ),
+                    border: Border.all(
+                      color: _activityColor
+                          .withOpacity(0.3),
+                    ),
                   ),
                   child: Row(
                     children: [
-                      Text(_effectiveType.emoji, style: const TextStyle(fontSize: 16)),
-                      const SizedBox(width: 6),
                       Text(
-                        _effectiveType.label.toUpperCase(),
+                        _effectiveType.emoji,
+                        style:
+                            const TextStyle(
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(
+                        width: 6,
+                      ),
+                      Text(
+                        _effectiveType.label
+                            .toUpperCase(),
                         style: TextStyle(
-                          color: _activityColor,
+                          color:
+                              _activityColor,
                           fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                          fontWeight:
+                              FontWeight.w800,
                           letterSpacing: 1,
                         ),
                       ),
                     ],
                   ),
                 ),
+
                 const Spacer(),
+
                 if (_isPaused)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.orange.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.orange.withOpacity(0.4)),
+                    padding:
+                        const EdgeInsets
+                            .symmetric(
+                      horizontal: 8,
+                      vertical: 4,
                     ),
-                    child: const Text(
+                    decoration:
+                        BoxDecoration(
+                      color: AppColors
+                          .orange
+                          .withOpacity(
+                        0.15,
+                      ),
+                      borderRadius:
+                          BorderRadius.circular(
+                        8,
+                      ),
+                      border: Border.all(
+                        color: AppColors
+                            .orange
+                            .withOpacity(
+                          0.4,
+                        ),
+                      ),
+                    ),
+                    child:
+                        const Text(
                       '⏸ PAUSED',
                       style: TextStyle(
-                        color: AppColors.orange,
+                        color:
+                            AppColors.orange,
                         fontSize: 10,
-                        fontWeight: FontWeight.w700,
+                        fontWeight:
+                            FontWeight.w700,
                         letterSpacing: 1,
                       ),
                     ),
@@ -429,111 +783,220 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               ],
             ),
           ),
+
           const SizedBox(height: 24),
+
           Text(
             _formattedTime,
-            style: const TextStyle(
-              color: AppColors.textMain,
+            style:
+                const TextStyle(
+              color:
+                  AppColors.textMain,
               fontSize: 64,
-              fontWeight: FontWeight.w200,
+              fontWeight:
+                  FontWeight.w200,
               letterSpacing: 4,
-              fontFeatures: [FontFeature.tabularFigures()],
+              fontFeatures: [
+                FontFeature
+                    .tabularFigures(),
+              ],
             ),
           ),
+
           const SizedBox(height: 8),
+
           const Text(
             'ELAPSED TIME',
-            style: TextStyle(color: AppColors.textSub, fontSize: 10, letterSpacing: 3),
-          ),
-          const SizedBox(height: 32),
-          AnimatedBuilder(
-            animation: _pulse,
-            builder: (_, __) => _SpeedometerWidget(
-              speedKmh: _currentSpeedKmh,
-              activityColor: _activityColor,
-              pulseValue: _isPaused ? 0.9 : _pulse.value,
+            style: TextStyle(
+              color: AppColors.textSub,
+              fontSize: 10,
+              letterSpacing: 3,
             ),
           ),
+
           const SizedBox(height: 32),
+
+          AnimatedBuilder(
+            animation: _pulse,
+            builder: (_, __) =>
+                _SpeedometerWidget(
+              speedKmh:
+                  _currentSpeedKmh,
+              activityColor:
+                  _activityColor,
+              pulseValue:
+                  _isPaused
+                      ? 0.9
+                      : _pulse.value,
+            ),
+          ),
+
+          const SizedBox(height: 32),
+
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
+            padding:
+                const EdgeInsets.symmetric(
+              horizontal: 24,
+            ),
             child: Row(
               children: [
                 _TrackStat(
                   label: 'DISTANCE',
-                  value: _distanceKm.toStringAsFixed(2),
+                  value:
+                      _distanceKm
+                          .toStringAsFixed(
+                    2,
+                  ),
                   unit: 'km',
-                  color: _activityColor,
+                  color:
+                      _activityColor,
                 ),
+
                 _TrackStat(
                   label: 'AVG PACE',
                   value: _pace,
                   unit: '/km',
-                  color: AppColors.gold,
+                  color:
+                      AppColors.gold,
                 ),
+
                 _TrackStat(
                   label: 'MAX SPEED',
-                  value: _maxSpeedKmh.toStringAsFixed(1),
+                  value:
+                      _maxSpeedKmh
+                          .toStringAsFixed(
+                    1,
+                  ),
                   unit: 'km/h',
-                  color: AppColors.orange,
+                  color:
+                      AppColors.orange,
                 ),
               ],
             ),
           ),
+
           const Spacer(),
+
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+            padding:
+                const EdgeInsets.fromLTRB(
+              24,
+              0,
+              24,
+              32,
+            ),
             child: Row(
               children: [
                 Expanded(
-                  child: GestureDetector(
-                    onTap: _togglePause,
-                    child: Container(
+                  child:
+                      GestureDetector(
+                    onTap:
+                        _togglePause,
+                    child:
+                        Container(
                       height: 60,
-                      decoration: BoxDecoration(
-                        color: AppColors.bgCard,
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.borderDim),
+                      decoration:
+                          BoxDecoration(
+                        color:
+                            AppColors.bgCard,
+                        borderRadius:
+                            BorderRadius
+                                .circular(
+                          16,
+                        ),
+                        border:
+                            Border.all(
+                          color: AppColors
+                              .borderDim,
+                        ),
                       ),
                       child: Icon(
-                        _isPaused ? Icons.play_arrow : Icons.pause,
-                        color: _isPaused ? AppColors.blue : AppColors.gold,
+                        _isPaused
+                            ? Icons
+                                .play_arrow
+                            : Icons.pause,
+                        color: _isPaused
+                            ? AppColors
+                                .blue
+                            : AppColors
+                                .gold,
                         size: 30,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
+
+                const SizedBox(
+                  width: 14,
+                ),
+
                 Expanded(
                   flex: 2,
-                  child: GestureDetector(
-                    onTap: _confirmStop,
-                    child: Container(
+                  child:
+                      GestureDetector(
+                    onTap:
+                        _confirmStop,
+                    child:
+                        Container(
                       height: 60,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [AppColors.red, AppColors.red.withOpacity(0.7)],
+                      decoration:
+                          BoxDecoration(
+                        gradient:
+                            LinearGradient(
+                          colors: [
+                            AppColors.red,
+                            AppColors.red
+                                .withOpacity(
+                              0.7,
+                            ),
+                          ],
                         ),
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius:
+                            BorderRadius
+                                .circular(
+                          16,
+                        ),
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.red.withOpacity(0.3),
-                            blurRadius: 12,
+                            color: AppColors
+                                .red
+                                .withOpacity(
+                              0.3,
+                            ),
+                            blurRadius:
+                                12,
                           ),
                         ],
                       ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                      child:
+                          const Row(
+                        mainAxisAlignment:
+                            MainAxisAlignment
+                                .center,
                         children: [
-                          Icon(Icons.stop_circle_outlined, color: Colors.white, size: 24),
-                          SizedBox(width: 8),
+                          Icon(
+                            Icons
+                                .stop_circle_outlined,
+                            color:
+                                Colors.white,
+                            size: 24,
+                          ),
+                          SizedBox(
+                            width: 8,
+                          ),
                           Text(
                             'FINISH',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 2,
+                            style:
+                                TextStyle(
+                              color:
+                                  Colors.white,
+                              fontSize:
+                                  16,
+                              fontWeight:
+                                  FontWeight
+                                      .w800,
+                              letterSpacing:
+                                  2,
                             ),
                           ),
                         ],
@@ -549,39 +1012,85 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     );
   }
 
+  // ── CONFIRM STOP ───────────────────────────────────────────────────────────
+
   void _confirmStop() {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: AppColors.borderDim),
+        backgroundColor:
+            AppColors.bgCard,
+        shape:
+            RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.circular(
+            16,
+          ),
+          side:
+              const BorderSide(
+            color:
+                AppColors.borderDim,
+          ),
         ),
-        title: const Text(
+        title:
+            const Text(
           'FINISH SESSION?',
-          style: TextStyle(
-            color: AppColors.textMain,
+          style:
+              TextStyle(
+            color:
+                AppColors.textMain,
             fontSize: 15,
-            fontWeight: FontWeight.w800,
+            fontWeight:
+                FontWeight.w800,
             letterSpacing: 1,
           ),
         ),
         content: Text(
-          'You\'ve covered ${_distanceKm.toStringAsFixed(2)} km in $_formattedTime. Save and end?',
-          style: const TextStyle(color: AppColors.textSub, fontSize: 13),
+          'You\'ve covered '
+          '${_distanceKm.toStringAsFixed(2)} km '
+          'in $_formattedTime. '
+          'Save and end?',
+          style:
+              const TextStyle(
+            color:
+                AppColors.textSub,
+            fontSize: 13,
+          ),
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('KEEP GOING', style: TextStyle(color: AppColors.blue)),
+            onPressed:
+                () => Navigator.pop(
+              context,
+            ),
+            child:
+                const Text(
+              'KEEP GOING',
+              style:
+                  TextStyle(
+                color:
+                    AppColors.blue,
+              ),
+            ),
           ),
+
           TextButton(
             onPressed: () {
-              Navigator.pop(context);
+              Navigator.pop(
+                context,
+              );
+
               _stopAndSave();
             },
-            child: const Text('FINISH', style: TextStyle(color: AppColors.red)),
+            child:
+                const Text(
+              'FINISH',
+              style:
+                  TextStyle(
+                color:
+                    AppColors.red,
+              ),
+            ),
           ),
         ],
       ),
@@ -589,12 +1098,19 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   }
 }
 
-enum _Phase { preRun, tracking, summary }
+enum _Phase {
+  preRun,
+  warmUp,
+  tracking,
+  summary,
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Speedometer Widget
+// SPEEDOMETER
 // ─────────────────────────────────────────────────────────────────────────────
-class _SpeedometerWidget extends StatelessWidget {
+
+class _SpeedometerWidget
+    extends StatelessWidget {
   final double speedKmh;
   final Color activityColor;
   final double pulseValue;
@@ -606,53 +1122,97 @@ class _SpeedometerWidget extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final fraction = (speedKmh / 20.0).clamp(0.0, 1.0);
+  Widget build(
+    BuildContext context,
+  ) {
+    final fraction =
+        (speedKmh / 20.0)
+            .clamp(0.0, 1.0);
+
     return SizedBox(
       width: 180,
       height: 180,
       child: Stack(
-        alignment: Alignment.center,
+        alignment:
+            Alignment.center,
         children: [
           Transform.scale(
             scale: pulseValue,
             child: Container(
               width: 180,
               height: 180,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
+              decoration:
+                  BoxDecoration(
+                shape:
+                    BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: activityColor.withOpacity(0.15),
-                    blurRadius: 30,
-                    spreadRadius: 10,
+                    color:
+                        activityColor
+                            .withOpacity(
+                      0.15,
+                    ),
+                    blurRadius:
+                        30,
+                    spreadRadius:
+                        10,
                   ),
                 ],
               ),
             ),
           ),
+
           CustomPaint(
-            size: const Size(170, 170),
-            painter: _ArcPainter(fraction: fraction, color: activityColor),
+            size:
+                const Size(
+              170,
+              170,
+            ),
+            painter:
+                _ArcPainter(
+              fraction:
+                  fraction,
+              color:
+                  activityColor,
+            ),
           ),
+
           Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisAlignment:
+                MainAxisAlignment
+                    .center,
             children: [
               Text(
-                speedKmh.toStringAsFixed(1),
-                style: TextStyle(
-                  color: activityColor,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w200,
-                  letterSpacing: 2,
+                speedKmh
+                    .toStringAsFixed(
+                  1,
+                ),
+                style:
+                    TextStyle(
+                  color:
+                      activityColor,
+                  fontSize:
+                      40,
+                  fontWeight:
+                      FontWeight
+                          .w200,
+                  letterSpacing:
+                      2,
                 ),
               ),
               Text(
                 'km/h',
-                style: TextStyle(
-                  color: activityColor.withOpacity(0.6),
-                  fontSize: 12,
-                  letterSpacing: 2,
+                style:
+                    TextStyle(
+                  color:
+                      activityColor
+                          .withOpacity(
+                    0.6,
+                  ),
+                  fontSize:
+                      12,
+                  letterSpacing:
+                      2,
                 ),
               ),
             ],
@@ -663,112 +1223,92 @@ class _SpeedometerWidget extends StatelessWidget {
   }
 }
 
-class _ArcPainter extends CustomPainter {
+class _ArcPainter
+    extends CustomPainter {
   final double fraction;
   final Color color;
-  const _ArcPainter({required this.fraction, required this.color});
+
+  const _ArcPainter({
+    required this.fraction,
+    required this.color,
+  });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2 - 8;
-    const startAngle = math.pi * 0.75;
-    const sweepMax  = math.pi * 1.5;
+  void paint(
+    Canvas canvas,
+    Size size,
+  ) {
+    final center = Offset(
+      size.width / 2,
+      size.height / 2,
+    );
+
+    final radius =
+        size.width / 2 - 8;
+
+    const startAngle =
+        math.pi * 0.75;
+
+    const sweepMax =
+        math.pi * 1.5;
 
     canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      startAngle, sweepMax, false,
+      Rect.fromCircle(
+        center: center,
+        radius: radius,
+      ),
+      startAngle,
+      sweepMax,
+      false,
       Paint()
-        ..color = color.withOpacity(0.12)
+        ..color =
+            color.withOpacity(
+          0.12,
+        )
         ..strokeWidth = 10
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round,
+        ..style =
+            PaintingStyle.stroke
+        ..strokeCap =
+            StrokeCap.round,
     );
+
     if (fraction > 0) {
       canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle, sweepMax * fraction, false,
+        Rect.fromCircle(
+          center: center,
+          radius: radius,
+        ),
+        startAngle,
+        sweepMax *
+            fraction,
+        false,
         Paint()
           ..color = color
           ..strokeWidth = 10
-          ..style = PaintingStyle.stroke
-          ..strokeCap = StrokeCap.round,
+          ..style =
+              PaintingStyle.stroke
+          ..strokeCap =
+              StrokeCap.round,
       );
     }
   }
 
   @override
-  bool shouldRepaint(_ArcPainter old) =>
-      old.fraction != fraction || old.color != color;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Activity type picker button
-// ─────────────────────────────────────────────────────────────────────────────
-class _ActivityTypeButton extends StatelessWidget {
-  final ActivityType type;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _ActivityTypeButton({
-    required this.type,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  Color get _color {
-    switch (type) {
-      case ActivityType.walk: return AppColors.cyan;
-      case ActivityType.jog:  return AppColors.gold;
-      case ActivityType.run:  return AppColors.blue;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: isSelected ? _color.withOpacity(0.15) : AppColors.bgCard,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isSelected ? _color : AppColors.borderDim,
-              width: isSelected ? 2 : 1,
-            ),
-            boxShadow: isSelected
-                ? [BoxShadow(color: _color.withOpacity(0.2), blurRadius: 12)]
-                : [],
-          ),
-          child: Column(
-            children: [
-              Text(type.emoji, style: const TextStyle(fontSize: 22)),
-              const SizedBox(height: 6),
-              Text(
-                type.label.toUpperCase(),
-                style: TextStyle(
-                  color: isSelected ? _color : AppColors.textSub,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  bool shouldRepaint(
+    _ArcPainter old,
+  ) {
+    return old.fraction !=
+            fraction ||
+        old.color != color;
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Tracking stat tile
+// TRACKING STAT
 // ─────────────────────────────────────────────────────────────────────────────
-class _TrackStat extends StatelessWidget {
+
+class _TrackStat
+    extends StatelessWidget {
   final String label;
   final String value;
   final String unit;
@@ -782,25 +1322,69 @@ class _TrackStat extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Expanded(
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2)),
+        margin:
+            const EdgeInsets
+                .symmetric(
+          horizontal: 4,
+        ),
+        padding:
+            const EdgeInsets.all(
+          12,
+        ),
+        decoration:
+            BoxDecoration(
+          color:
+              AppColors.bgCard,
+          borderRadius:
+              BorderRadius.circular(
+            12,
+          ),
+          border: Border.all(
+            color: color.withOpacity(
+              0.2,
+            ),
+          ),
         ),
         child: Column(
           children: [
-            Text(value,
-                style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w700)),
-            Text(unit, style: const TextStyle(color: AppColors.textSub, fontSize: 9)),
-            const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(
-                    color: AppColors.textSub, fontSize: 8, letterSpacing: 0.5)),
+            Text(
+              value,
+              style:
+                  TextStyle(
+                color: color,
+                fontSize: 18,
+                fontWeight:
+                    FontWeight.w700,
+              ),
+            ),
+            Text(
+              unit,
+              style:
+                  const TextStyle(
+                color:
+                    AppColors.textSub,
+                fontSize: 9,
+              ),
+            ),
+            const SizedBox(
+              height: 2,
+            ),
+            Text(
+              label,
+              style:
+                  const TextStyle(
+                color:
+                    AppColors.textSub,
+                fontSize: 8,
+                letterSpacing:
+                    0.5,
+              ),
+            ),
           ],
         ),
       ),
@@ -809,35 +1393,15 @@ class _TrackStat extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Speed info row
+// SUMMARY SHEET
 // ─────────────────────────────────────────────────────────────────────────────
-class _SpeedInfo extends StatelessWidget {
-  final String label;
-  final String range;
-  final Color color;
 
-  const _SpeedInfo({required this.label, required this.range, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(label,
-            style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
-        const Spacer(),
-        Text(range, style: const TextStyle(color: AppColors.textSub, fontSize: 12)),
-      ],
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-//  Summary bottom sheet  (now shows quest completions)
-// ─────────────────────────────────────────────────────────────────────────────
-class _SummarySheet extends StatelessWidget {
+class _SummarySheet
+    extends StatelessWidget {
   final ActivitySession session;
   final bool isSaving;
-  final List<DailyQuest> completedQuests;
+  final List<DailyQuest>
+      completedQuests;
   final VoidCallback onDone;
 
   const _SummarySheet({
@@ -849,194 +1413,425 @@ class _SummarySheet extends StatelessWidget {
 
   Color get _typeColor {
     switch (session.type) {
-      case ActivityType.walk: return AppColors.cyan;
-      case ActivityType.jog:  return AppColors.gold;
-      case ActivityType.run:  return AppColors.blue;
+      case ActivityType.walk:
+        return AppColors.cyan;
+
+      case ActivityType.jog:
+        return AppColors.gold;
+
+      case ActivityType.run:
+        return AppColors.blue;
     }
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     final totalCrystals =
-        completedQuests.fold<int>(0, (sum, q) => sum + q.crystalReward);
+        completedQuests.fold<int>(
+      0,
+      (sum, quest) =>
+          sum + quest.crystalReward,
+    );
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-      decoration: const BoxDecoration(
-        color: AppColors.bgCard,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      padding:
+          const EdgeInsets.fromLTRB(
+        24,
+        24,
+        24,
+        40,
       ),
-      child: SingleChildScrollView(
+      decoration:
+          const BoxDecoration(
+        color:
+            AppColors.bgCard,
+        borderRadius:
+            BorderRadius.vertical(
+          top: Radius.circular(
+            28,
+          ),
+        ),
+      ),
+      child:
+          SingleChildScrollView(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize:
+              MainAxisSize.min,
           children: [
-            // Handle
             Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: AppColors.borderDim,
-                borderRadius: BorderRadius.circular(2),
+              width: 40,
+              height: 4,
+              decoration:
+                  BoxDecoration(
+                color:
+                    AppColors.borderDim,
+                borderRadius:
+                    BorderRadius.circular(
+                  2,
+                ),
               ),
             ),
-            const SizedBox(height: 24),
 
-            // Trophy icon
+            const SizedBox(
+              height: 24,
+            ),
+
             Container(
-              width: 72, height: 72,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _typeColor.withOpacity(0.12),
-                border: Border.all(color: _typeColor.withOpacity(0.4), width: 2),
+              width: 72,
+              height: 72,
+              decoration:
+                  BoxDecoration(
+                shape:
+                    BoxShape.circle,
+                color:
+                    _typeColor
+                        .withOpacity(
+                  0.12,
+                ),
+                border:
+                    Border.all(
+                  color:
+                      _typeColor
+                          .withOpacity(
+                    0.4,
+                  ),
+                  width: 2,
+                ),
               ),
-              child: Center(
-                child: Text(session.type.emoji, style: const TextStyle(fontSize: 32)),
+              child:
+                  Center(
+                child: Text(
+                  session.type
+                      .emoji,
+                  style:
+                      const TextStyle(
+                    fontSize: 32,
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 12),
+
+            const SizedBox(
+              height: 12,
+            ),
 
             Text(
               'SESSION COMPLETE!',
-              style: TextStyle(
-                color: _typeColor, fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 2,
+              style:
+                  TextStyle(
+                color:
+                    _typeColor,
+                fontSize: 18,
+                fontWeight:
+                    FontWeight.w900,
+                letterSpacing: 2,
               ),
             ),
-            const SizedBox(height: 4),
+
+            const SizedBox(
+              height: 4,
+            ),
+
             Text(
-              '${session.type.label} • ${session.formattedDuration}',
-              style: const TextStyle(color: AppColors.textSub, fontSize: 13),
+              '${session.type.label} • '
+              '${session.formattedDuration}',
+              style:
+                  const TextStyle(
+                color:
+                    AppColors.textSub,
+                fontSize: 13,
+              ),
             ),
-            const SizedBox(height: 24),
 
-            // Stats grid
+            const SizedBox(
+              height: 24,
+            ),
+
             Row(
               children: [
                 _SummaryStat(
-                  label: 'DISTANCE',
-                  value: '${session.distanceKm.toStringAsFixed(2)} km',
-                  color: _typeColor,
+                  label:
+                      'DISTANCE',
+                  value:
+                      '${session.distanceKm.toStringAsFixed(2)} km',
+                  color:
+                      _typeColor,
                 ),
                 _SummaryStat(
-                  label: 'AVG PACE',
-                  value: session.formattedPace,
-                  color: AppColors.gold,
+                  label:
+                      'AVG PACE',
+                  value:
+                      session.formattedPace,
+                  color:
+                      AppColors.gold,
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+
+            const SizedBox(
+              height: 10,
+            ),
+
             Row(
               children: [
                 _SummaryStat(
-                  label: 'MAX SPEED',
-                  value: '${session.maxSpeedKmh.toStringAsFixed(1)} km/h',
-                  color: AppColors.orange,
+                  label:
+                      'MAX SPEED',
+                  value:
+                      '${session.maxSpeedKmh.toStringAsFixed(1)} km/h',
+                  color:
+                      AppColors.orange,
                 ),
                 _SummaryStat(
-                  label: 'AVG SPEED',
-                  value: '${session.avgSpeedKmh.toStringAsFixed(1)} km/h',
-                  color: AppColors.cyan,
+                  label:
+                      'AVG SPEED',
+                  value:
+                      '${session.avgSpeedKmh.toStringAsFixed(1)} km/h',
+                  color:
+                      AppColors.cyan,
                 ),
               ],
             ),
-            const SizedBox(height: 16),
 
-            // XP + Coins rewards
+            const SizedBox(
+              height: 16,
+            ),
+
             Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: AppColors.bgPanel,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.borderDim),
+              padding:
+                  const EdgeInsets.all(
+                14,
+              ),
+              decoration:
+                  BoxDecoration(
+                color:
+                    AppColors.bgPanel,
+                borderRadius:
+                    BorderRadius.circular(
+                  14,
+                ),
+                border:
+                    Border.all(
+                  color:
+                      AppColors.borderDim,
+                ),
               ),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisAlignment:
+                    MainAxisAlignment
+                        .center,
                 children: [
-                  const Icon(Icons.star, color: AppColors.gold, size: 16),
-                  const SizedBox(width: 6),
-                  Text('+${session.xpEarned} XP',
-                      style: const TextStyle(
-                          color: AppColors.gold, fontSize: 14, fontWeight: FontWeight.w700)),
-                  const SizedBox(width: 20),
-                  const Icon(Icons.monetization_on, color: AppColors.gold, size: 16),
-                  const SizedBox(width: 6),
-                  Text('+${session.coinsEarned} coins',
-                      style: const TextStyle(
-                          color: AppColors.gold, fontSize: 14, fontWeight: FontWeight.w700)),
+                  const Icon(
+                    Icons.star,
+                    color:
+                        AppColors.gold,
+                    size: 16,
+                  ),
+
+                  const SizedBox(
+                    width: 6,
+                  ),
+
+                  Text(
+                    '+${session.xpEarned} XP',
+                    style:
+                        const TextStyle(
+                      color:
+                          AppColors.gold,
+                      fontSize: 14,
+                      fontWeight:
+                          FontWeight.w700,
+                    ),
+                  ),
+
+                  const SizedBox(
+                    width: 20,
+                  ),
+
+                  const Icon(
+                    Icons
+                        .monetization_on,
+                    color:
+                        AppColors.gold,
+                    size: 16,
+                  ),
+
+                  const SizedBox(
+                    width: 6,
+                  ),
+
+                  Text(
+                    '+${session.coinsEarned} coins',
+                    style:
+                        const TextStyle(
+                      color:
+                          AppColors.gold,
+                      fontSize: 14,
+                      fontWeight:
+                          FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
 
-            // ── Quest completion banner ──────────────────────────────────────
-            if (completedQuests.isNotEmpty) ...[
-              const SizedBox(height: 12),
+            if (completedQuests
+                .isNotEmpty) ...[
+              const SizedBox(
+                height: 12,
+              ),
+
               Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.bgPanel,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.cyan.withOpacity(0.5)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.cyan.withOpacity(0.1),
-                      blurRadius: 12,
-                    ),
-                  ],
+                padding:
+                    const EdgeInsets.all(
+                  14,
                 ),
-                child: Column(
+                decoration:
+                    BoxDecoration(
+                  color:
+                      AppColors.bgPanel,
+                  borderRadius:
+                      BorderRadius.circular(
+                    14,
+                  ),
+                  border:
+                      Border.all(
+                    color: AppColors.cyan
+                        .withOpacity(
+                      0.5,
+                    ),
+                  ),
+                ),
+                child:
+                    Column(
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment:
+                          MainAxisAlignment
+                              .center,
                       children: [
-                        const Text('💎', style: TextStyle(fontSize: 16)),
-                        const SizedBox(width: 8),
+                        const Text(
+                          '💎',
+                          style:
+                              TextStyle(
+                            fontSize:
+                                16,
+                          ),
+                        ),
+                        const SizedBox(
+                          width: 8,
+                        ),
                         Text(
                           'QUEST${completedQuests.length > 1 ? 'S' : ''} COMPLETED!',
-                          style: const TextStyle(
-                            color: AppColors.cyan,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.5,
+                          style:
+                              const TextStyle(
+                            color:
+                                AppColors
+                                    .cyan,
+                            fontSize:
+                                13,
+                            fontWeight:
+                                FontWeight
+                                    .w900,
+                            letterSpacing:
+                                1.5,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 10),
-                    ...completedQuests.map((q) => Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            children: [
-                              Icon(q.icon, color: q.color, size: 16),
-                              const SizedBox(width: 8),
-                              Text(
-                                q.title,
-                                style: TextStyle(
-                                  color: q.color,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
+
+                    const SizedBox(
+                      height: 10,
+                    ),
+
+                    ...completedQuests
+                        .map(
+                      (quest) =>
+                          Padding(
+                        padding:
+                            const EdgeInsets
+                                .only(
+                          bottom:
+                              6,
+                        ),
+                        child:
+                            Row(
+                          children: [
+                            Icon(
+                              quest
+                                  .icon,
+                              color:
+                                  quest
+                                      .color,
+                              size:
+                                  16,
+                            ),
+                            const SizedBox(
+                              width:
+                                  8,
+                            ),
+                            Text(
+                              quest
+                                  .title,
+                              style:
+                                  TextStyle(
+                                color:
+                                    quest.color,
+                                fontSize:
+                                    12,
+                                fontWeight:
+                                    FontWeight
+                                        .w600,
                               ),
-                              const Spacer(),
-                              Text(
-                                '+${q.crystalReward} 💎',
-                                style: const TextStyle(
-                                  color: AppColors.cyan,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              '+${quest.crystalReward} 💎',
+                              style:
+                                  const TextStyle(
+                                color:
+                                    AppColors
+                                        .cyan,
+                                fontSize:
+                                    12,
+                                fontWeight:
+                                    FontWeight
+                                        .w700,
                               ),
-                            ],
-                          ),
-                        )),
-                    if (completedQuests.length > 1) ...[
-                      const Divider(color: AppColors.borderDim, height: 16),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    if (completedQuests
+                            .length >
+                        1) ...[
+                      const Divider(
+                        color:
+                            AppColors
+                                .borderDim,
+                        height: 16,
+                      ),
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+                        mainAxisAlignment:
+                            MainAxisAlignment
+                                .end,
                         children: [
                           Text(
                             'Total: +$totalCrystals 💎 Mana Crystals',
-                            style: const TextStyle(
-                              color: AppColors.cyan,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
+                            style:
+                                const TextStyle(
+                              color:
+                                  AppColors
+                                      .cyan,
+                              fontSize:
+                                  13,
+                              fontWeight:
+                                  FontWeight
+                                      .w900,
                             ),
                           ),
                         ],
@@ -1047,47 +1842,108 @@ class _SummarySheet extends StatelessWidget {
               ),
             ],
 
-            if (session.userPick != session.type) ...[
-              const SizedBox(height: 10),
+            if (session.userPick !=
+                session.type) ...[
+              const SizedBox(
+                height: 10,
+              ),
               Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.gold.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.gold.withOpacity(0.3)),
+                padding:
+                    const EdgeInsets.all(
+                  10,
+                ),
+                decoration:
+                    BoxDecoration(
+                  color: AppColors.gold
+                      .withOpacity(
+                    0.08,
+                  ),
+                  borderRadius:
+                      BorderRadius.circular(
+                    10,
+                  ),
+                  border:
+                      Border.all(
+                    color: AppColors.gold
+                        .withOpacity(
+                      0.3,
+                    ),
+                  ),
                 ),
                 child: Text(
-                  '⚡ You selected ${session.userPick.label} but GPS confirmed ${session.type.label}!',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppColors.gold, fontSize: 11),
+                  '⚡ You selected '
+                  '${session.userPick.label} '
+                  'but GPS confirmed '
+                  '${session.type.label}!',
+                  textAlign:
+                      TextAlign.center,
+                  style:
+                      const TextStyle(
+                    color:
+                        AppColors.gold,
+                    fontSize: 11,
+                  ),
                 ),
               ),
             ],
 
-            const SizedBox(height: 24),
+            const SizedBox(
+              height: 24,
+            ),
 
             SizedBox(
-              width: double.infinity,
+              width:
+                  double.infinity,
               height: 52,
-              child: ElevatedButton(
-                onPressed: isSaving ? null : onDone,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _typeColor,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              child:
+                  ElevatedButton(
+                onPressed:
+                    isSaving
+                        ? null
+                        : onDone,
+                style:
+                    ElevatedButton
+                        .styleFrom(
+                  backgroundColor:
+                      _typeColor,
+                  shape:
+                      RoundedRectangleBorder(
+                    borderRadius:
+                        BorderRadius.circular(
+                      14,
+                    ),
+                  ),
                 ),
-                child: isSaving
-                    ? const SizedBox(
-                        width: 20, height: 20,
-                        child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2))
-                    : const Text(
-                        'DONE',
-                        style: TextStyle(
-                          color: Colors.black,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 2,
-                        ),
-                      ),
+                child:
+                    isSaving
+                        ? const SizedBox(
+                            width:
+                                20,
+                            height:
+                                20,
+                            child:
+                                CircularProgressIndicator(
+                              color:
+                                  Colors.black,
+                              strokeWidth:
+                                  2,
+                            ),
+                          )
+                        : const Text(
+                            'DONE',
+                            style:
+                                TextStyle(
+                              color:
+                                  Colors.black,
+                              fontSize:
+                                  16,
+                              fontWeight:
+                                  FontWeight
+                                      .w900,
+                              letterSpacing:
+                                  2,
+                            ),
+                          ),
               ),
             ),
           ],
@@ -1097,32 +1953,75 @@ class _SummarySheet extends StatelessWidget {
   }
 }
 
-class _SummaryStat extends StatelessWidget {
+class _SummaryStat
+    extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
 
-  const _SummaryStat({required this.label, required this.value, required this.color});
+  const _SummaryStat({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Expanded(
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: AppColors.bgPanel,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.2)),
+        margin:
+            const EdgeInsets
+                .symmetric(
+          horizontal: 4,
+        ),
+        padding:
+            const EdgeInsets.all(
+          12,
+        ),
+        decoration:
+            BoxDecoration(
+          color:
+              AppColors.bgPanel,
+          borderRadius:
+              BorderRadius.circular(
+            12,
+          ),
+          border:
+              Border.all(
+            color:
+                color.withOpacity(
+              0.2,
+            ),
+          ),
         ),
         child: Column(
           children: [
-            Text(value,
-                style: TextStyle(color: color, fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 2),
-            Text(label,
-                style: const TextStyle(
-                    color: AppColors.textSub, fontSize: 9, letterSpacing: 0.5)),
+            Text(
+              value,
+              style:
+                  TextStyle(
+                color: color,
+                fontSize: 16,
+                fontWeight:
+                    FontWeight.w700,
+              ),
+            ),
+            const SizedBox(
+              height: 2,
+            ),
+            Text(
+              label,
+              style:
+                  const TextStyle(
+                color:
+                    AppColors.textSub,
+                fontSize: 9,
+                letterSpacing:
+                    0.5,
+              ),
+            ),
           ],
         ),
       ),
