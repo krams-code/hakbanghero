@@ -32,6 +32,9 @@ dependencies:
   geolocator: ^13.0.4          # GPS speed + position stream
   permission_handler: ^11.3.1  # Runtime permission requests
 
+  # ── Sudden mid-run challenge alarm ────────────────────────────────────────
+  audioplayers: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -42,9 +45,12 @@ flutter:
   assets:
     - assets/images/
     - assets/images/character/
+    - assets/images/character/female/
+    - assets/images/character/female/clothes/
     - assets/images/character/hair/
     - assets/images/character/face/
     - assets/images/character/clothes/
     - assets/images/guide/
     - assets/fonts/
     - assets/animations/
+    - assets/audio/

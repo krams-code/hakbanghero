@@ -11,6 +11,7 @@ import 'package:hakbanghero/screens/shop/avatar_shop_screen.dart';
 import 'package:hakbanghero/screens/bosses/boss_map_screen.dart';
 import 'package:hakbanghero/run/run_tracking_screen.dart';
 
+import '../state/evolution_state.dart';
 import '../widgets/block_navbar.dart';
 import '../widgets/block_ui.dart';
 import '../widgets/global_top_bar.dart';
@@ -32,10 +33,25 @@ class _MainShellState extends State<MainShell> {
   /// interrupt tracking.
   bool _isTrackingActive = false;
 
+  bool _bodiesPrecached = false;
+
   @override
   void initState() {
     super.initState();
+    // App-wide body-form state (follows sign-in/out by itself).
+    EvolutionState.instance.start();
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybeStartTutorial());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_bodiesPrecached) {
+      _bodiesPrecached = true;
+      // Decode all four body sprites now, so an evolution swap is a
+      // synchronous ImageCache hit (zero asset-loading lag).
+      EvolutionState.instance.precacheBodies(context);
+    }
   }
 
   void _navigateTo(int index) {
@@ -82,6 +98,7 @@ class _MainShellState extends State<MainShell> {
         RunTrackingScreen(
           onExit: () => _navigateTo(0),
           onActiveChanged: _onTrackingChanged,
+          onNavigate: _navigateTo, // post-run tutorial drives the tabs
         ),
         const LeaderboardScreen(),
         const ActivityScreen(),
@@ -137,12 +154,18 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
       // Removed entirely during an active run.
-      bottomNavigationBar: _isTrackingActive
-          ? null
-          : BlockNavBar(
-              currentIndex: _currentIndex == 5 ? -1 : _currentIndex,
-              onTap: _navigateTo,
-            ),
+      // Slides open when the run ends (and closes when a run starts).
+      bottomNavigationBar: AnimatedSize(
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeOutCubic,
+        alignment: Alignment.topCenter,
+        child: _isTrackingActive
+            ? const SizedBox(width: double.infinity)
+            : BlockNavBar(
+                currentIndex: _currentIndex == 5 ? -1 : _currentIndex,
+                onTap: _navigateTo,
+              ),
+      ),
     );
   }
 }

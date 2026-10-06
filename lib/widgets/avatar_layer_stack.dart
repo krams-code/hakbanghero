@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../constants/asset_paths.dart';
+
 /// Native canvas of every character layer.
 const double kSpriteWidth = 286;
 const double kSpriteHeight = 512;
@@ -39,8 +41,104 @@ const LayerFit kFaceFit =
     LayerFit(scale: 0.40, pivotX: 142.5, pivotY: 178, targetX: 142.5, targetY: 72);
 const LayerFit kHairFit =
     LayerFit(scale: 0.55, pivotX: 142.5, pivotY: 165, targetX: 142.5, targetY: 48);
+/// Per-hairstyle seating, calibrated on the male head template
+/// (head box x106-180, y27-108 — identical in all four body PNGs).
+/// Each hair PNG is a different size, so each gets its own scale + anchor:
+///  * the hair's TOP (or hairline for the spiky style) is pinned to the crown
+///  * the fringe lands just above the eyebrows (y ~ 55-60), never over the eyes
+///  * long hair falls over the shoulders without being clipped by them
+const Map<String, LayerFit> kHairFitByStyle = {
+  'warrior_spiky':
+      LayerFit(scale: 0.46, pivotX: 141, pivotY: 163, targetX: 143, targetY: 50),
+  'classic_pompadour':
+      LayerFit(scale: 0.44, pivotX: 142, pivotY: 48, targetX: 143, targetY: 13),
+  'wavy_mane':
+      LayerFit(scale: 0.54, pivotX: 142.5, pivotY: 59, targetX: 143, targetY: 20),
+  'long_flowing':
+      LayerFit(scale: 0.40, pivotX: 142.5, pivotY: 51, targetX: 143, targetY: 22),
+  'short_crop':
+      LayerFit(scale: 0.51, pivotX: 142.5, pivotY: 73, targetX: 143, targetY: 20),
+};
+
+/// Picks the calibrated fit from the hair asset's file name.
+LayerFit hairFitFor(String hairPath) {
+  for (final e in kHairFitByStyle.entries) {
+    if (hairPath.contains(e.key)) return e.value;
+  }
+  return kHairFit;
+}
+
 const LayerFit kOutfitFit =
     LayerFit(scale: 0.80, pivotX: 142.5, pivotY: 68, targetX: 142.5, targetY: 116);
+
+// ───────────────────────── Female sheet calibration ─────────────────────────
+//
+// The female bodies (assets/images/character/female/body_*.png) have a
+// SMALLER, tier-dependent head than the male template (measured head box,
+// 286x512 canvas):
+//     tier          head x      width   height   (male: x106-180, 75 x 73)
+//     underweight   113-174       62      66
+//     normal        112-175       64      64
+//     overweight    110-176       67      67
+//     obese         109-177       69      70
+// Their shoulders are narrower too. So when the body path is in the female
+// folder, the face, hair and outfit are re-scaled per tier (head-width ratio
+// for hair/face, shoulder-width for the outfit) and re-anchored. The crown
+// stays at y=27 for every tier. Verified by compositing all 5 hairstyles on
+// all 4 bodies (no spill past the skull, fringe above the brows, long hair
+// falls over the shoulders, tank covers the torso without overhang).
+class BodyFits {
+  final double hairScale; // multiplier on the male per-style hair scale
+  final LayerFit face;
+  final LayerFit outfit;
+  const BodyFits({required this.hairScale, required this.face, required this.outfit});
+}
+
+const Map<String, BodyFits> kFemaleFits = {
+  'underweight': BodyFits(
+    hairScale: 0.83,
+    face: LayerFit(scale: 0.332, pivotX: 142.5, pivotY: 178, targetX: 143, targetY: 67.5),
+    outfit: LayerFit(scale: 0.60, pivotX: 142.5, pivotY: 68, targetX: 143.5, targetY: 114),
+  ),
+  'normal': BodyFits(
+    hairScale: 0.85,
+    face: LayerFit(scale: 0.340, pivotX: 142.5, pivotY: 178, targetX: 143, targetY: 66.6),
+    outfit: LayerFit(scale: 0.65, pivotX: 142.5, pivotY: 68, targetX: 143.5, targetY: 113),
+  ),
+  'overweight': BodyFits(
+    hairScale: 0.89,
+    face: LayerFit(scale: 0.356, pivotX: 142.5, pivotY: 178, targetX: 143, targetY: 68.4),
+    outfit: LayerFit(scale: 0.70, pivotX: 142.5, pivotY: 68, targetX: 143.5, targetY: 111),
+  ),
+  'obese': BodyFits(
+    hairScale: 0.92,
+    face: LayerFit(scale: 0.368, pivotX: 142.5, pivotY: 178, targetX: 143, targetY: 70.2),
+    outfit: LayerFit(scale: 0.73, pivotX: 142.5, pivotY: 68, targetX: 143.5, targetY: 109),
+  ),
+};
+
+/// Female fits for `.../female/body_<tier>.png`, or null for the male sheet.
+BodyFits? bodyFitsFor(String bodyPath) {
+  if (!bodyPath.contains('/female/')) return null;
+  for (final e in kFemaleFits.entries) {
+    if (bodyPath.contains('body_${e.key}')) return e.value;
+  }
+  return null;
+}
+
+/// Hair fit re-scaled for a body (head 0.5px right of the male centre line).
+LayerFit _hairFitForBody(String hairPath, BodyFits? bf) {
+  final base = hairFitFor(hairPath);
+  if (bf == null) return base;
+  return LayerFit(
+    scale: base.scale * bf.hairScale,
+    pivotX: base.pivotX,
+    pivotY: base.pivotY,
+    targetX: base.targetX + 0.5,
+    targetY: base.targetY,
+  );
+}
+
 
 const ColorFilter _grayscale = ColorFilter.matrix(<double>[
   0.2126, 0.7152, 0.0722, 0, 0,
@@ -103,7 +201,8 @@ class AvatarLayerStack extends StatelessWidget {
   final String? hairColor; // '#RRGGBB' or null = untinted
 
   final LayerFit faceFit;
-  final LayerFit hairFit;
+  /// null = use the calibrated per-style fit (see [kHairFitByStyle]).
+  final LayerFit? hairFit;
   final LayerFit gearFit;
 
   /// none = crisp pixels (native/enlarged or small shrink).
@@ -119,7 +218,7 @@ class AvatarLayerStack extends StatelessWidget {
     this.skinTone,
     this.hairColor,
     this.faceFit = kFaceFit,
-    this.hairFit = kHairFit,
+    this.hairFit,
     this.gearFit = kOutfitFit,
     this.filterQuality = FilterQuality.none,
   });
@@ -142,6 +241,22 @@ class AvatarLayerStack extends StatelessWidget {
     });
   }
 
+  /// Body-matched clothing lives in .../female/clothes/<id>_<bodyType>.png
+  static bool _isBodyMatched(String path) => path.contains('/female/clothes/');
+
+  /// Shown only while a body-matched PNG is missing from the project: the old
+  /// one-size outfit, fitted to the female body, so the hero is never naked.
+  Widget? _legacyOutfit(String path, BodyFits? bf) {
+    if (bf == null || !path.contains('/starter_set_')) return null;
+    return _fitted(
+      PixelLayer(
+        path: '$kClothesDir/outfit_01.png',
+        filterQuality: filterQuality,
+      ),
+      bf.outfit,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget layer(String path,
@@ -162,6 +277,12 @@ class AvatarLayerStack extends StatelessWidget {
           ),
         );
 
+    // Female sheet: auto-pick calibrated fits unless the caller overrode them.
+    final bf = bodyFitsFor(bodyPath);
+    final face = bf != null && identical(faceFit, kFaceFit) ? bf.face : faceFit;
+    final gearF = bf != null && identical(gearFit, kOutfitFit) ? bf.outfit : gearFit;
+    final hairF = hairFit ?? _hairFitForBody(hairPath, bf);
+
     return AspectRatio(
       aspectRatio: kLayerAspect,
       child: Stack(
@@ -171,9 +292,14 @@ class AvatarLayerStack extends StatelessWidget {
               tint: _tint(skinTone),
               fallback: const Center(
                   child: Icon(Icons.person_outline, color: Colors.white24, size: 48))),
-          layer(facePath, fit: faceFit),
-          layer(hairPath, tint: _tint(hairColor), gray: true, fit: hairFit),
-          for (final g in gearPaths) layer(g, fit: gearFit),
+          layer(facePath, fit: face),
+          layer(hairPath, tint: _tint(hairColor), gray: true, fit: hairF),
+          for (final g in gearPaths)
+            if (_isBodyMatched(g))
+              // Made for exactly this body: drawn 1:1, never scaled.
+              layer(g, fit: LayerFit.none, fallback: _legacyOutfit(g, bf))
+            else
+              layer(g, fit: gearF),
           for (final o in overlays) Positioned.fill(child: o),
         ],
       ),

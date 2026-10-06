@@ -42,7 +42,9 @@ class BlockNavBar extends StatelessWidget {
       return Expanded(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 3),
-          child: PressBlock(
+          child: KeyedSubtree(
+            key: TutorialKeys.forNav(item.$1), // Phase 2 tutorial spotlight
+            child: PressBlock(
             color: selected ? Rb.gold : Rb.panel,
             edge: selected ? Rb.goldEdge : Rb.panelEdge,
             depth: 5,
@@ -71,6 +73,7 @@ class BlockNavBar extends StatelessWidget {
                 ],
               ),
             ),
+          ),
           ),
         ),
       );

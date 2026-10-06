@@ -71,7 +71,13 @@ class FitnessStats {
   static DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 
   /// [sessions] may be in any order. [weightKg] falls back to 65.
-  static FitnessStats compute(List<ActivitySession> sessions, {double? weightKg}) {
+  /// [enduranceBonus] = flat points from weight check-in evolutions
+  /// (`endurance_bonus` on the user doc; each evolution is worth +10 of 100).
+  static FitnessStats compute(
+    List<ActivitySession> sessions, {
+    double? weightKg,
+    int enduranceBonus = 0,
+  }) {
     final now = DateTime.now();
     final today = _day(now);
     final kg = (weightKg == null || weightKg <= 0) ? 65.0 : weightKg;
@@ -150,7 +156,8 @@ class FitnessStats {
     // ── endurance ──
     final since30 = today.subtract(const Duration(days: 29));
     final s30 = sorted.where((s) => !_day(s.startTime).isBefore(since30)).length;
-    final endurance = ((streak * 12 + s30 * 4) / 100).clamp(0.0, 1.0);
+    final endurance =
+        ((streak * 12 + s30 * 4 + enduranceBonus) / 100).clamp(0.0, 1.0);
 
     // ── records ──
     final longestRun = sorted.fold<double>(0, (m, s) => s.distanceKm > m ? s.distanceKm : m);

@@ -9,7 +9,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hakbanghero/models/activity_model.dart';
 import 'package:hakbanghero/models/daily_quest_definitions.dart';
 
+import '../challenges/challenge_audio.dart';
+import '../challenges/challenge_engine.dart';
+import '../models/tutorial_progress.dart';
 import '../widgets/block_ui.dart';
+import '../widgets/post_run_tutorial.dart';
 import '../widgets/pre_run_view.dart';
 import '../widgets/session_views.dart';
 import '../widgets/warmup_view.dart';
@@ -22,10 +26,15 @@ class RunTrackingScreen extends StatefulWidget {
   /// MainShell uses this to hide the bottom navigation bar mid-run.
   final ValueChanged<bool>? onActiveChanged;
 
+  /// Switches the bottom-nav tab (0 SHOP, 3 RANKS, 4 ACTIVITY). Used by the
+  /// post-run tutorial, which walks the player through those tabs.
+  final ValueChanged<int>? onNavigate;
+
   const RunTrackingScreen({
     super.key,
     this.onExit,
     this.onActiveChanged,
+    this.onNavigate,
   });
 
   @override
@@ -75,9 +84,15 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   // Quests completed during this save
   List<DailyQuest> _newlyCompletedQuests = [];
 
+  // ── Sudden mid-run challenges (Sprint Blitz / Pace Keeper) ────────────────
+  final ChallengeEngine _challenge = ChallengeEngine();
+  List<ChallengeRecord> _summaryChallenges = [];
+
   @override
   void initState() {
     super.initState();
+
+    _challenge.onEvent = (e) => ChallengeAudio.instance.onEvent(e);
 
     _pulseCtrl = AnimationController(
       vsync: this,
@@ -114,6 +129,10 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
     _pulseCtrl.dispose();
     _fadeCtrl.dispose();
+
+    _challenge.onEvent = null;
+    _challenge.dispose();
+    ChallengeAudio.instance.stop();
 
     super.dispose();
   }
@@ -176,6 +195,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   void _exitRunScreen() {
     _positionSub?.cancel();
     _timer?.cancel();
+    ChallengeAudio.instance.stop();
 
     if (widget.onExit != null) {
       widget.onExit!();
@@ -270,7 +290,10 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       _lastMoveAt = null;
 
       _newlyCompletedQuests = [];
+      _summaryChallenges = [];
     });
+
+    _challenge.reset();
 
     _timer = Timer.periodic(
       const Duration(seconds: 1),
@@ -279,6 +302,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
           setState(() {
             _elapsedSeconds++;
           });
+          _tickChallenge();
         }
       },
     );
@@ -327,11 +351,22 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                 'lng': pos.longitude,
               });
             });
+            _tickChallenge();
           }
         }
 
         _lastPosition = pos;
       },
+    );
+  }
+
+  /// Feed the challenge engine: once a second and after each accepted GPS fix.
+  void _tickChallenge() {
+    if (_phase != _Phase.tracking) return;
+    _challenge.update(
+      elapsedSeconds: _elapsedSeconds,
+      distanceKm: _distanceKm,
+      moving: _isMoving,
     );
   }
 
@@ -354,6 +389,15 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   Future<void> _stopAndSave() async {
     _positionSub?.cancel();
     _timer?.cancel();
+    ChallengeAudio.instance.stop();
+
+    // Sudden-quest rewards. A challenge still running when the player
+    // finishes is simply abandoned (not counted).
+    final challengeRecords = List<ChallengeRecord>.of(_challenge.records);
+    final bonusXp = _challenge.bonusXp;
+    final bonusGems = _challenge.bonusGems;
+    final lootChests = _challenge.lootChests;
+    _summaryChallenges = challengeRecords;
 
     // Determine final activity type by majority vote of speed samples.
     ActivityType finalType = _userPick;
@@ -388,8 +432,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
     final xp =
         (_distanceKm * 100 +
-                _elapsedSeconds / 60 * 5)
-            .toInt();
+                    _elapsedSeconds / 60 * 5)
+                .toInt() +
+            bonusXp;
 
     final coins =
         (_distanceKm * 10).toInt();
@@ -443,9 +488,12 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
             userRef.collection('activities');
 
         // 1. Save activity document.
-        await actRef.add(
-          session.toFirestore(),
-        );
+        await actRef.add({
+          ...session.toFirestore(),
+          if (challengeRecords.isNotEmpty)
+            'challenges':
+                challengeRecords.map((r) => r.toMap()).toList(),
+        });
 
         // 2. Update user totals.
         await userRef.update({
@@ -459,6 +507,11 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               FieldValue.increment(xp),
           'coins':
               FieldValue.increment(coins),
+          // Sudden-quest bonuses (Mana Crystals are the `gems` field).
+          if (bonusGems > 0)
+            'gems': FieldValue.increment(bonusGems),
+          if (lootChests > 0)
+            'loot_chests': FieldValue.increment(lootChests),
         });
 
         // 3. Daily quest transaction.
@@ -599,27 +652,62 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         isSaving: _isSaving,
         completedQuests:
             _newlyCompletedQuests,
-        onDone: () {
-          Navigator.of(context).pop();
-
-          // Do NOT Navigator.pop() the RunTrackingScreen.
-          // It lives inside MainShell's IndexedStack.
-          if (mounted) {
-            setState(() {
-              _phase = _Phase.preRun;
-              _distanceKm = 0;
-              _currentSpeedKmh = 0;
-              _maxSpeedKmh = 0;
-              _elapsedSeconds = 0;
-              _isPaused = false;
-              _lastPosition = null;
-              _speedSamples.clear();
-              _routePoints.clear();
-            });
-          }
-        },
+        challenges: _summaryChallenges,
+        onDone: _onSummaryDone,
       ),
     );
+  }
+
+  bool _tutorialLaunching = false;
+
+  /// DONE on the Session Summary.
+  ///
+  /// First-ever run (hasCompletedFirstRunTutorial == false): the sheet is NOT
+  /// closed. The Phase 2 tutorial takes over the screen, spotlights the
+  /// rewards, and closes the summary itself when the player taps NEXT.
+  Future<void> _onSummaryDone() async {
+    if (_tutorialLaunching || PostRunTutorial.isActive) return;
+    _tutorialLaunching = true;
+    try {
+      final pending = await TutorialProgress.loadFirstRunPending();
+      if (!mounted) return;
+      if (pending) {
+        PostRunTutorial.show(
+          context,
+          hooks: PostRunTutorialHooks(
+            closeSummary: () async => _closeSummary(),
+            navigateTo: (i) => widget.onNavigate?.call(i),
+            onFinished: TutorialProgress.markFirstRunDone,
+          ),
+        );
+        return;
+      }
+      _closeSummary();
+    } finally {
+      _tutorialLaunching = false;
+    }
+  }
+
+  /// Dismiss the summary sheet and return to the pre-run screen.
+  void _closeSummary() {
+    Navigator.of(context).pop();
+
+    // Do NOT Navigator.pop() the RunTrackingScreen.
+    // It lives inside MainShell's IndexedStack.
+    if (mounted) {
+      setState(() {
+        _phase = _Phase.preRun;
+        _distanceKm = 0;
+        _currentSpeedKmh = 0;
+        _maxSpeedKmh = 0;
+        _elapsedSeconds = 0;
+        _isPaused = false;
+        _lastPosition = null;
+        _speedSamples.clear();
+        _routePoints.clear();
+      });
+      _challenge.reset();
+    }
   }
 
   void _showSnack(String msg) {
@@ -702,6 +790,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       maxSpeedKmh: _maxSpeedKmh,
       onPause: _togglePause,
       onFinish: _confirmStop,
+      challenge: _challenge,
     );
   }
 

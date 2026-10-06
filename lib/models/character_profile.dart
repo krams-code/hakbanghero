@@ -1,6 +1,42 @@
 import '../constants/asset_paths.dart';
+import 'body_composition.dart';
 
 enum BodyTier { underweight, normal, overweight, obese }
+
+/// BodyCompositionState (BMI state machine) -> the sprite tier / PNG.
+/// `skinny` uses the art called body_underweight.png.
+extension BodyCompositionTierX on BodyCompositionState {
+  BodyTier get tier {
+    switch (this) {
+      case BodyCompositionState.skinny:
+        return BodyTier.underweight;
+      case BodyCompositionState.normal:
+        return BodyTier.normal;
+      case BodyCompositionState.overweight:
+        return BodyTier.overweight;
+      case BodyCompositionState.obese:
+        return BodyTier.obese;
+    }
+  }
+
+  /// e.g. assets/images/character/body_normal.png
+  String get assetPath => '$kCharacterDir/${tier.assetName}';
+}
+
+extension BodyTierCompositionX on BodyTier {
+  BodyCompositionState get composition {
+    switch (this) {
+      case BodyTier.underweight:
+        return BodyCompositionState.skinny;
+      case BodyTier.normal:
+        return BodyCompositionState.normal;
+      case BodyTier.overweight:
+        return BodyCompositionState.overweight;
+      case BodyTier.obese:
+        return BodyCompositionState.obese;
+    }
+  }
+}
 
 extension BodyTierExt on BodyTier {
   String get label {
@@ -40,15 +76,28 @@ extension BodyTierExt on BodyTier {
     }
   }
 
+  /// Standard medical BMI bands (shared with the check-in calculator in
+  /// body_composition.dart, so there is ONE set of thresholds).
   static BodyTier fromBmi(double heightCm, double weightKg) {
     if (heightCm <= 0 || weightKg <= 0) return BodyTier.normal;
-    final heightM = heightCm / 100.0;
-    final bmi = weightKg / (heightM * heightM);
-    if (bmi < 18.5) return BodyTier.underweight;
-    if (bmi < 25.0) return BodyTier.normal;
-    if (bmi < 30.0) return BodyTier.overweight;
-    return BodyTier.obese;
+    return calculateBodyComposition(weightKg, heightCm).tier;
   }
+}
+
+// ───────────────────────── Gender routing ─────────────────────────
+
+/// 'female' (any case) -> the female sheet; anything else (incl. null / old
+/// accounts with no gender) -> the original male sheet.
+bool isFemaleGender(String? gender) => gender?.trim().toLowerCase() == 'female';
+
+/// Asset key of the body PNG for a gender + body-mass state.
+///   female -> assets/images/character/female/body_<tier>.png
+///   male   -> assets/images/character/body_<tier>.png
+String bodyAssetFor(BodyTier tier, String? gender) {
+  if (isFemaleGender(gender)) {
+    return '$kFemaleCharacterDir/${tier.assetName}';
+  }
+  return '$kCharacterDir/${tier.assetName}';
 }
 
 /// Matches your real hair_*.png files exactly.
@@ -89,7 +138,8 @@ extension HairStyleExt on HairStyle {
   String get assetPath => '$kHairDir/$assetFileName';
 
   static HairStyle fromId(String id) {
-    switch (id) {
+    // tolerant: 'Wavy Mane' / 'wavy mane' / 'wavy_mane' all work
+    switch (id.trim().toLowerCase().replaceAll(RegExp(r'[\s-]+'), '_')) {
       case 'classic_pompadour': return HairStyle.classicPompadour;
       case 'wavy_mane':         return HairStyle.wavyMane;
       case 'long_flowing':      return HairStyle.longFlowing;
@@ -153,6 +203,9 @@ class CharacterProfile {
   final FaceExpression faceExpression;
   final bool created;
 
+  /// 'male' | 'female' | null (set at sign-up, stored in users/{uid}.gender).
+  final String? gender;
+
   const CharacterProfile({
     this.heightCm,
     this.weightKg,
@@ -161,6 +214,7 @@ class CharacterProfile {
     this.hairColor = '#1A1A1A',
     this.faceExpression = FaceExpression.neutral,
     this.created = false,
+    this.gender,
   });
 
   BodyTier get bodyTier {
@@ -176,6 +230,7 @@ class CharacterProfile {
     String? hairColor,
     FaceExpression? faceExpression,
     bool? created,
+    String? gender,
   }) {
     return CharacterProfile(
       heightCm: heightCm ?? this.heightCm,
@@ -185,6 +240,7 @@ class CharacterProfile {
       hairColor: hairColor ?? this.hairColor,
       faceExpression: faceExpression ?? this.faceExpression,
       created: created ?? this.created,
+      gender: gender ?? this.gender,
     );
   }
 
@@ -208,6 +264,7 @@ class CharacterProfile {
       hairColor: data['hair_color'] as String? ?? '#1A1A1A',
       faceExpression: FaceExpressionExt.fromId(data['face_expression'] as String? ?? 'neutral'),
       created: data['character_created'] as bool? ?? false,
+      gender: data['gender'] as String?,
     );
   }
 }

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../constants/asset_paths.dart';
 import '../../models/character_profile.dart';
+import '../../models/outfit_catalog.dart';
 import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import '../../widgets/avatar_preview.dart';
 import '../../widgets/block_ui.dart';
@@ -16,6 +17,16 @@ import '../../widgets/block_ui.dart';
 //    owned_items     [String] bought item ids
 //    hair_style / face_expression / equipped_clothes / background_id
 //                             saved look
+//
+//  LOCKING (see isShopItemUnlocked):
+//    free item          price 0, no km gate  -> always unlocked (starter pack)
+//    premium item       price > 0            -> unlocked only AFTER it is bought:
+//                                               gems are subtracted in a
+//                                               transaction, then the id is
+//                                               added to owned_items
+//    milestone item     unlockKm > 0, price 0-> unlocked automatically once
+//                                               total_km reaches unlockKm
+//    premium + km gate  both must be satisfied
 // ═════════════════════════════════════════════════════════════════
 
 // ───────────────────────── Catalog ─────────────────────────
@@ -55,6 +66,19 @@ class ShopItem {
       asset != null;
 }
 
+/// The single source of truth for "can this player use [item] right now?".
+/// The shop AND the gear chest both call it, so they can never disagree.
+bool isShopItemUnlocked(
+  ShopItem item, {
+  required Set<String> owned,
+  required double totalKm,
+}) {
+  if (item.isFree) return true; // starter pack
+  if (item.unlockKm > totalKm) return false; // milestone not reached yet
+  if (item.price == 0) return true; // pure milestone reward: auto-unlocks
+  return owned.contains(item.id); // premium: only after the purchase
+}
+
 /// Only items whose art really exists in assets/. Add a line to add an item.
 const List<ShopItem> kShopCatalog = [
   // 💇 HAIR (ids = HairStyle ids)
@@ -64,8 +88,9 @@ const List<ShopItem> kShopCatalog = [
       price: 120, asset: '$kHairDir/hair_01_warrior_spiky.png', emoji: '💇'),
   ShopItem(id: 'classic_pompadour', category: ShopCategory.hair, name: 'Pompadour',
       price: 150, asset: '$kHairDir/hair_03_classic_pompadour.png', emoji: '💇'),
+  // ⭐ starter hair (free for every new hero, see StarterPack)
   ShopItem(id: 'wavy_mane', category: ShopCategory.hair, name: 'Wavy Mane',
-      price: 200, asset: '$kHairDir/hair_05_wavy_mane.png', emoji: '💇'),
+      asset: '$kHairDir/hair_05_wavy_mane.png', emoji: '💇'),
   ShopItem(id: 'long_flowing', category: ShopCategory.hair, name: 'Long & Flowing',
       price: 250, unlockKm: 25, asset: '$kHairDir/hair_07_long_flowing.png', emoji: '💇'),
 
@@ -80,13 +105,16 @@ const List<ShopItem> kShopCatalog = [
       price: 60, colorHex: '#4A4A4A', emoji: '🎨'),
   ShopItem(id: 'hc_D2A679', category: ShopCategory.colors, name: 'Sandy',
       price: 80, colorHex: '#D2A679', emoji: '🎨'),
+  // Black, Espresso (brown) and Golden Blonde are the free starter colours
   ShopItem(id: 'hc_E8C468', category: ShopCategory.colors, name: 'Golden Blonde',
-      price: 100, colorHex: '#E8C468', emoji: '🎨'),
+      colorHex: '#E8C468', emoji: '🎨'),
   ShopItem(id: 'hc_B33A1E', category: ShopCategory.colors, name: 'Legendary Crimson',
       price: 200, colorHex: '#B33A1E', emoji: '🎨'),
 
   // 🎽 CLOTHES
-  ShopItem(id: 'outfit_01', category: ShopCategory.clothes, name: 'Training Set',
+  // ⭐ starter outfit: the white tank-top set (free). Female heroes get the
+  // body-matched file female/clothes/starter_set_<bodyType>.png.
+  ShopItem(id: kStarterOutfitId, category: ShopCategory.clothes, name: 'Training Set',
       asset: '$kClothesDir/outfit_01.png', emoji: '🎽', slot: 'armor'),
   // Milestone reward with no art yet (shows as locked / "art coming soon")
   ShopItem(id: 'slayer_boots', category: ShopCategory.clothes, name: 'Slayer Iron Boots',
@@ -122,6 +150,7 @@ class _ShopData {
   final Set<String> owned;
   final String hair, face, clothes, bg;
   final String bodyId, skinTone, hairColor;
+  final String? gender;
 
   const _ShopData({
     required this.gems,
@@ -134,6 +163,7 @@ class _ShopData {
     required this.bodyId,
     required this.skinTone,
     required this.hairColor,
+    required this.gender,
   });
 
   factory _ShopData.from(Map<String, dynamic> d) {
@@ -146,8 +176,8 @@ class _ShopData {
     final rawClothes = d['equipped_clothes'];
     final clothesList = rawClothes is List ? rawClothes.whereType<String>().toList() : null;
     final clothes = clothesList == null
-        ? 'outfit_01'
-        : (clothesList.isEmpty ? '' : clothesList.first);
+        ? StarterPack.activeOutfit
+        : (clothesList.isEmpty ? '' : normalizeOutfitId(clothesList.first));
 
     final ownedRaw = d['owned_items'];
 
@@ -162,6 +192,7 @@ class _ShopData {
       bodyId: tier.id,
       skinTone: p.skinTone,
       hairColor: p.hairColor,
+      gender: p.gender,
     );
   }
 }
@@ -219,12 +250,14 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     }
   }
 
+  /// `isUnlocked` for this player (see [isShopItemUnlocked]).
   bool _isOwned(ShopItem i, _ShopData s) =>
-      i.isFree ||
-      s.owned.contains(i.id) ||
+      isShopItemUnlocked(i, owned: s.owned, totalKm: s.totalKm) ||
       // the colour you already wear is yours
       (i.category == ShopCategory.colors &&
           i.colorHex?.toUpperCase() == s.hairColor.toUpperCase());
+
+  /// Locked behind a kilometre milestone that is not reached yet.
   bool _isLocked(ShopItem i, _ShopData s) => !_isOwned(i, s) && i.unlockKm > s.totalKm;
 
   List<ShopItem> _draftItems() {
@@ -497,7 +530,8 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   }
 
   Widget _buildTile(ShopItem item, _ShopData s) {
-    final owned = _isOwned(item, s);
+    final isUnlocked = _isOwned(item, s); // false = lock overlay
+    final owned = isUnlocked;
     final locked = _isLocked(item, s);
     final equipped = item.category == ShopCategory.colors
         ? _hairColor.toUpperCase() == item.colorHex?.toUpperCase()
@@ -529,8 +563,11 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    _preview(item),
-                    if (locked) _lockMask(item),
+                    _preview(item, s),
+                    if (locked)
+                      _lockMask(item)
+                    else if (!isUnlocked)
+                      _premiumLock(), // priced item, not bought yet
                   ],
                 ),
               ),
@@ -561,7 +598,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     } else if (item.price == 0) {
       fill = Rb.neon; edge = Rb.greenEdge; text = 'FREE';
     } else {
-      fill = Rb.green; edge = Rb.greenEdge; text = '💎 ${item.price}';
+      fill = Rb.green; edge = Rb.greenEdge; text = '🔒 💎 ${item.price}';
     }
     return Block(
       color: fill,
@@ -603,8 +640,31 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     );
   }
 
+  /// Dim scrim + padlock on a premium item the player has not bought yet
+  /// (the art stays visible so it can still be tried on).
+  Widget _premiumLock() {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: Color(0x553A3D40)),
+        Align(
+          alignment: Alignment.topRight,
+          child: Container(
+            margin: const EdgeInsets.all(4),
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(Icons.lock, color: Rb.gold, size: 15),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// Standalone preview of just the item's asset.
-  Widget _preview(ShopItem item) {
+  Widget _preview(ShopItem item, _ShopData s) {
     if (item.category == ShopCategory.backgrounds) {
       return BlockBackground(id: item.id);
     }
@@ -630,8 +690,15 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
         return ShopCropImage(path: item.asset!, focusX: 141, focusY: 112, zoom: 1.0);
       case ShopCategory.faces:
         return ShopCropImage(path: item.asset!, focusX: 142.5, focusY: 178, zoom: 1.9);
-      default: // clothes
-        return ShopCropImage(path: item.asset!, focusX: 142.5, focusY: 252, zoom: 0.55);
+      default: // clothes: show the version made for the hero's body
+        final mine = clothesAssetFor(s.bodyId, item.id, gender: s.gender);
+        return ShopCropImage(
+          path: mine.isEmpty ? item.asset! : mine,
+          fallbackPath: item.asset,
+          focusX: 142.5,
+          focusY: 252,
+          zoom: 0.55,
+        );
     }
   }
 
@@ -790,6 +857,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
                             activeGear: _clothes,
                             skinTone: s.skinTone,
                             hairColor: _hairColor,
+                            gender: s.gender,
                             // drawn at ~1/3 scale, so filter instead of dropping pixels
                             filterQuality: FilterQuality.medium,
                           ),
@@ -888,10 +956,14 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
 /// outfit PNG (mostly transparent canvas) fills its item box nicely.
 class ShopCropImage extends StatelessWidget {
   final String path;
+
+  /// Drawn instead when [path] is missing from the project.
+  final String? fallbackPath;
   final double focusX, focusY, zoom;
 
   const ShopCropImage({
     required this.path,
+    this.fallbackPath,
     required this.focusX,
     required this.focusY,
     required this.zoom,
@@ -912,7 +984,14 @@ class ShopCropImage extends StatelessWidget {
               path,
               fit: BoxFit.fill,
               filterQuality: FilterQuality.none,
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              errorBuilder: (_, __, ___) => fallbackPath == null
+                  ? const SizedBox.shrink()
+                  : Image.asset(
+                      fallbackPath!,
+                      fit: BoxFit.fill,
+                      filterQuality: FilterQuality.none,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
             ),
           ),
         ],

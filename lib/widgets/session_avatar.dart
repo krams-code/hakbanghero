@@ -92,6 +92,7 @@ class _SessionAvatarState extends State<SessionAvatar>
               child: AvatarPreview.fromData(
                 data,
                 filterQuality: FilterQuality.medium,
+                ownerUid: FirebaseAuth.instance.currentUser?.uid,
               ),
             ),
           ],

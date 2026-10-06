@@ -1,15 +1,18 @@
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
 import '../../models/character_profile.dart';
-import '../../widgets/hero_sprite.dart';
-import '../../theme/app_colors.dart';
+import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
+import '../../widgets/avatar_preview.dart';
+import '../../widgets/block_inputs.dart';
+import '../../widgets/block_ui.dart';
+import '../../models/outfit_catalog.dart';
+import '../../models/tutorial_progress.dart';
 import '../main_shell.dart';
 
-
-
 class CharacterCreationScreen extends StatefulWidget {
-  final bool isEditMode; // true when opened from Equipment to tweak appearance
+  final bool isEditMode; // true when opened from Profile to tweak appearance
   const CharacterCreationScreen({super.key, this.isEditMode = false});
 
   @override
@@ -18,26 +21,44 @@ class CharacterCreationScreen extends StatefulWidget {
 
 class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
   bool _isMetric = true;
-
   final _heightCmCtrl = TextEditingController();
   final _heightFtCtrl = TextEditingController();
   final _heightInCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
 
   String _skinTone = kSkinTonePresets[2];
-  HairStyle _hairStyle = HairStyle.shortCrop;
+  // Onboarding is locked to the starter pack: hair STYLE, expression and
+  // clothes are not selectable here (see StarterPack). Only the body (from
+  // height/weight), skin tone and hair colour are.
+  HairStyle _hairStyle = HairStyle.wavyMane;
   String _hairColor = kHairColorPresets[0];
 
   bool _saving = false;
   bool _loadingExisting = true;
 
+  /// 'male' | 'female' from sign-up (users/{uid}.gender). Picks the body sheet.
+  String? _gender;
+
   @override
   void initState() {
     super.initState();
+    _loadGender();
     if (widget.isEditMode) {
       _loadExistingProfile();
     } else {
       _loadingExisting = false;
+    }
+  }
+
+  Future<void> _loadGender() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final g = doc.data()?['gender'] as String?;
+      if (mounted && g != _gender) setState(() => _gender = g);
+    } catch (_) {
+      // keep the male default; never block hero creation on this
     }
   }
 
@@ -79,7 +100,7 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
 
   void _snack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    blockSnack(context, msg);
   }
 
   double? get _heightCm {
@@ -111,15 +132,14 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
     final heightCm = _heightCm;
     final weightKg = _weightKg;
 
-    if (heightCm == null || heightCm <= 0) {
-      _snack('Please enter your height.');
+    if (heightCm == null || heightCm < 100 || heightCm > 250) {
+      _snack('Enter a height between 100 and 250 cm.');
       return;
     }
-    if (weightKg == null || weightKg <= 0) {
-      _snack('Please enter your weight.');
+    if (weightKg == null || weightKg < 25 || weightKg > 300) {
+      _snack('Enter a weight between 25 and 300 kg.');
       return;
     }
-
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       _snack('You need to be logged in.');
@@ -138,19 +158,23 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
     );
 
     try {
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .update({
+      await FirebaseFirestore.instance.collection('users').doc(uid).update({
         ...profile.toFirestore(),
-        // brand-new hero -> show the onboarding tutorial once
-        if (!widget.isEditMode) 'tutorial_done': false,
+        if (!widget.isEditMode) ...{
+          // brand-new hero -> the free starter pack, nothing else
+          ...StarterPack.toFirestore(),
+          'owned_items': FieldValue.arrayUnion(StarterPack.ownedItems),
+          // ...and show the onboarding tutorial once
+          'tutorial_done': false,
+          // Phase 2 (post-first-run walkthrough) still to come
+          TutorialProgress.firstRunField: false,
+        },
       });
 
       if (!mounted) return;
 
       if (widget.isEditMode) {
-        Navigator.of(context).pop(); // just return to Equipment screen
+        Navigator.of(context).pop();
       } else {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const MainShell()),
@@ -164,146 +188,63 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
     }
   }
 
+  // ───────────────────────── build ─────────────────────────
+
   @override
   Widget build(BuildContext context) {
     if (_loadingExisting) {
       return const Scaffold(
-        backgroundColor: AppColors.bgDeep,
-        body: Center(child: CircularProgressIndicator(color: AppColors.blue)),
+        backgroundColor: Rb.bg,
+        body: Center(child: CircularProgressIndicator(color: Rb.blue)),
       );
     }
 
     return PopScope(
-      canPop: widget.isEditMode, // full onboarding flow can't be skipped; editing later can
+      canPop: widget.isEditMode, // onboarding can't be skipped; editing can
       child: Scaffold(
-        backgroundColor: AppColors.bgDeep,
+        backgroundColor: Rb.bg,
         body: SafeArea(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (widget.isEditMode)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios, color: AppColors.textSub, size: 18),
-                      onPressed: () => Navigator.of(context).pop(),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 480),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 36),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _header(),
+                    const SizedBox(height: 16),
+                    _viewport(),
+                    const SizedBox(height: 22),
+                    _panel('📏 BODY STATS', [
+                      _label('UNITS'),
+                      _unitToggle(),
+                      const SizedBox(height: 16),
+                      _isMetric ? _metricHeightField() : _imperialHeightFields(),
+                      const SizedBox(height: 16),
+                      _weightField(),
+                    ]),
+                    const SizedBox(height: 16),
+                    _panel('🎨 LOOK', [
+                      _label('SKIN TONE'),
+                      _swatchRow(kSkinTonePresets, _skinTone,
+                          (hex) => setState(() => _skinTone = hex)),
+                      const SizedBox(height: 18),
+                      _label('HAIR COLOR'),
+                      _swatchRow(_hairColorChoices, _hairColor,
+                          (hex) => setState(() => _hairColor = hex)),
+                      const SizedBox(height: 18),
+                      _starterPackNote(),
+                    ]),
+                    const SizedBox(height: 24),
+                    NeonBlueButton(
+                      label: widget.isEditMode ? 'SAVE CHANGES' : 'BEGIN YOUR JOURNEY',
+                      loading: _saving,
+                      onTap: _saveAndContinue,
                     ),
-                  ),
-                Text(
-                  widget.isEditMode ? 'CUSTOMIZE APPEARANCE' : 'CREATE YOUR HERO',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: AppColors.blue,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 3,
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Your body reflects your real stats — customize the rest',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textSub, fontSize: 12),
-                ),
-                const SizedBox(height: 24),
-
-                // ── Live preview ──────────────────────────────────
-                Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.bgCard,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.borderDim),
-                    ),
-                    child: CharacterAvatarWidget(profile: _previewProfile),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Center(
-                  child: Text(
-                    _previewProfile.bodyTier.label.toUpperCase(),
-                    style: const TextStyle(
-                      color: AppColors.gold,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 28),
-                _sectionLabel('UNITS'),
-                const SizedBox(height: 8),
-                _unitToggle(),
-
-                const SizedBox(height: 20),
-                _sectionLabel('HEIGHT'),
-                const SizedBox(height: 8),
-                _isMetric ? _metricHeightField() : _imperialHeightFields(),
-
-                const SizedBox(height: 20),
-                _sectionLabel('WEIGHT'),
-                const SizedBox(height: 8),
-                _weightField(),
-
-                const SizedBox(height: 24),
-                _sectionLabel('SKIN TONE'),
-                const SizedBox(height: 10),
-                _swatchRow(
-                  kSkinTonePresets,
-                  _skinTone,
-                  (hex) => setState(() => _skinTone = hex),
-                ),
-
-                const SizedBox(height: 24),
-                _sectionLabel('HAIRSTYLE'),
-                const SizedBox(height: 10),
-                _hairStyleRow(),
-
-                const SizedBox(height: 24),
-                _sectionLabel('HAIR COLOR'),
-                const SizedBox(height: 10),
-                _swatchRow(
-                  kHairColorPresets,
-                  _hairColor,
-                  (hex) => setState(() => _hairColor = hex),
-                ),
-
-                const SizedBox(height: 32),
-                SizedBox(
-                  height: 54,
-                  child: ElevatedButton(
-                    onPressed: _saving ? null : _saveAndContinue,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.blue,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                    ),
-                    child: _saving
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            widget.isEditMode ? 'SAVE CHANGES' : 'BEGIN YOUR JOURNEY',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -311,39 +252,174 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
     );
   }
 
-  Widget _sectionLabel(String text) => Text(
-        text,
-        style: const TextStyle(
-          color: AppColors.textSub,
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 2,
+  Widget _header() => Block(
+        color: Rb.hud,
+        edge: Rb.hudEdge,
+        depth: 6,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            if (widget.isEditMode) ...[
+              PressBlock(
+                color: const Color(0xFFE2E2E2),
+                edge: const Color(0xFF6B6B6B),
+                depth: 4,
+                radius: 12,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                onTap: () => Navigator.of(context).pop(),
+                child: const Text('◀',
+                    style: TextStyle(
+                        color: Color(0xFF232527),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900)),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: BlockText(
+                      widget.isEditMode ? '✏️ CUSTOMIZE HERO' : '🧑 CREATE YOUR HERO',
+                      size: 20,
+                      stroke: 4.5,
+                    ),
+                  ),
+                  const Text(
+                    'Your body reflects your real stats',
+                    style: TextStyle(
+                      color: Color(0xFF2A2D31),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       );
 
+  // Live preview: rounded-square sky block, 3px black border, hard 3D shadow.
+  Widget _viewport() {
+    final p = _previewProfile;
+    return Column(
+      children: [
+        Container(
+          height: 340,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: const Color(0xFF8FD0FF),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.black, width: 3),
+            boxShadow: const [
+              BoxShadow(color: Colors.black, offset: Offset(0, 8), blurRadius: 0),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Container(
+                    height: 34,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF5BBF5B),
+                      border: Border(top: BorderSide(color: Colors.black, width: 3)),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 10, bottom: 18),
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    clipBehavior: Clip.none,
+                    child: SizedBox(
+                      width: kSpriteWidth,
+                      height: kSpriteHeight + 44, // headroom for tall hair
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 0,
+                            top: 44,
+                            width: kSpriteWidth,
+                            height: kSpriteHeight,
+                            child: AvatarPreview(
+                              bodySize: p.bodyTier.id,
+                              expression: p.faceExpression.id,
+                              hairStyle: p.hairStyle.id,
+                              activeGear: StarterPack.activeOutfit,
+                              skinTone: p.skinTone,
+                              hairColor: p.hairColor,
+                              filterQuality: FilterQuality.none,
+                              gender: _gender,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+        Block(
+          color: Rb.gold,
+          edge: Rb.goldEdge,
+          depth: 4,
+          radius: 10,
+          gloss: true,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          child: BlockText('💪 ${p.bodyTier.label.toUpperCase()}', size: 12, stroke: 3.5),
+        ),
+      ],
+    );
+  }
+
+  Widget _panel(String title, List<Widget> children) => Block(
+        color: Rb.panel,
+        edge: Rb.panelEdge,
+        depth: 6,
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            BlockText(title, size: 15, stroke: 4),
+            const SizedBox(height: 14),
+            ...children,
+          ],
+        ),
+      );
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 8),
+        child: BlockText(text, size: 12, stroke: 3.5),
+      );
+
+  // ── unit toggle: the active side is physically pressed down ──
   Widget _unitToggle() {
     Widget option(String label, bool metric) {
       final selected = _isMetric == metric;
       return Expanded(
-        child: GestureDetector(
+        child: PressBlock(
+          color: selected ? Rb.blue : const Color(0xFFE2E4E7),
+          edge: selected ? Rb.blueEdge : const Color(0xFF6B6F75),
+          depth: 6,
+          radius: 14,
+          forcePressed: selected,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
           onTap: () => setState(() => _isMetric = metric),
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 10),
-            decoration: BoxDecoration(
-              color: selected ? AppColors.blue.withOpacity(0.15) : AppColors.bgCard,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: selected ? AppColors.blue : AppColors.borderDim,
-              ),
-            ),
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: selected ? AppColors.blue : AppColors.textSub,
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-              ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: BlockText(label, size: 11, stroke: 3.5),
             ),
           ),
         ),
@@ -359,152 +435,196 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
     );
   }
 
-  InputDecoration _fieldDecoration(String hint) => InputDecoration(
-        hintText: hint,
-        hintStyle: const TextStyle(color: AppColors.textSub, fontSize: 14),
-        border: InputBorder.none,
-        contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+  Widget _unit(String t) => Padding(
+        padding: const EdgeInsets.only(right: 14),
+        child: BlockText(t, size: 12, stroke: 3, color: const Color(0xFFB8BDC4)),
       );
 
-  Widget _fieldWrapper({required Widget child}) => Container(
-        decoration: BoxDecoration(
-          color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.borderDim),
-        ),
-        child: child,
-      );
-
-  Widget _metricHeightField() {
-    return _fieldWrapper(
-      child: TextField(
+  Widget _metricHeightField() => BlockTextField(
+        label: 'HEIGHT',
+        hint: 'e.g. 170',
+        icon: '📏',
         controller: _heightCmCtrl,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(color: AppColors.textMain),
-        decoration: _fieldDecoration('Height in cm (e.g. 170)'),
         onChanged: (_) => setState(() {}),
-      ),
-    );
-  }
+        suffix: _unit('cm'),
+      );
 
-  Widget _imperialHeightFields() {
-    return Row(
-      children: [
-        Expanded(
-          child: _fieldWrapper(
-            child: TextField(
+  Widget _imperialHeightFields() => Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: BlockTextField(
+              label: 'HEIGHT (FT)',
+              hint: '5',
+              icon: '📏',
               controller: _heightFtCtrl,
               keyboardType: TextInputType.number,
-              style: const TextStyle(color: AppColors.textMain),
-              decoration: _fieldDecoration('Feet'),
               onChanged: (_) => setState(() {}),
+              suffix: _unit('ft'),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _fieldWrapper(
-            child: TextField(
+          const SizedBox(width: 10),
+          Expanded(
+            child: BlockTextField(
+              label: '(IN)',
+              hint: '8',
+              icon: '📏',
               controller: _heightInCtrl,
               keyboardType: TextInputType.number,
-              style: const TextStyle(color: AppColors.textMain),
-              decoration: _fieldDecoration('Inches'),
               onChanged: (_) => setState(() {}),
+              suffix: _unit('in'),
             ),
           ),
-        ),
+        ],
+      );
+
+  Widget _weightField() => BlockTextField(
+        label: 'WEIGHT',
+        hint: _isMetric ? 'e.g. 65' : 'e.g. 143',
+        icon: '⚖️',
+        controller: _weightCtrl,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        onChanged: (_) => setState(() {}),
+        suffix: _unit(_isMetric ? 'kg' : 'lbs'),
+      );
+
+  // ── swatches: rounded-square tiles that bounce when tapped ──
+  Widget _swatchRow(List<String> hexList, String selected, ValueChanged<String> onPick) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 14,
+      children: [
+        for (final hex in hexList)
+          _BounceTile(
+            selected: hex == selected,
+            onTap: () => onPick(hex),
+            child: ColoredBox(color: _colorFromHex(hex)),
+          ),
       ],
     );
   }
 
-  Widget _weightField() {
-    return _fieldWrapper(
-      child: TextField(
-        controller: _weightCtrl,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(color: AppColors.textMain),
-        decoration: _fieldDecoration(
-          _isMetric ? 'Weight in kg (e.g. 65)' : 'Weight in lbs (e.g. 143)',
-        ),
-        onChanged: (_) => setState(() {}),
-      ),
-    );
-  }
+  /// Hair colours offered here: the free presets (Black, Brown, Blonde).
+  /// When editing, the colour the hero already wears stays available too.
+  /// Everything else is bought in the Shop.
+  List<String> get _hairColorChoices => widget.isEditMode
+      ? <String>{...StarterPack.hairColors, _hairColor}.toList()
+      : StarterPack.hairColors;
 
-  Widget _swatchRow(List<String> hexList, String selected, ValueChanged<String> onPick) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: hexList.map((hex) {
-        final isSelected = hex == selected;
-        final color = _colorFromHex(hex);
-        return GestureDetector(
-          onTap: () => onPick(hex),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: isSelected ? AppColors.blue : AppColors.borderDim,
-                width: isSelected ? 3 : 1,
-              ),
-              boxShadow: isSelected
-                  ? [BoxShadow(color: AppColors.blue.withOpacity(0.4), blurRadius: 8)]
-                  : [],
+  /// Hair style / expression / clothes are locked to the starter set.
+  Widget _starterPackNote() => Block(
+        color: Rb.slate,
+        edge: Rb.slateEdge,
+        depth: 4,
+        radius: 12,
+        padding: const EdgeInsets.all(10),
+        child: const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            BlockText('🎁 STARTER PACK', size: 12, stroke: 3.5, color: Rb.gold),
+            SizedBox(height: 4),
+            BlockText(
+              'Wavy Mane hair • Default face • Training outfit.\n'
+              'Unlock more styles in the 🛒 Shop and on the Milestone path!',
+              size: 10,
+              stroke: 2.5,
+              color: Color(0xFFB8BDC4),
             ),
-          ),
-        );
-      }).toList(),
-    );
+          ],
+        ),
+      );
+
+  Color _colorFromHex(String hex) =>
+      Color(int.parse('FF${hex.replaceAll('#', '')}', radix: 16));
+}
+
+/// Thick rounded-square tile: 3px black border + hard bottom shadow.
+/// Bounces on tap; the selected tile sits pushed down with a gold ring + ✔.
+class _BounceTile extends StatefulWidget {
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget child;
+  final double? size; // null = fills the width, square
+
+  const _BounceTile({
+    required this.selected,
+    required this.onTap,
+    required this.child,
+    this.size = 48,
+  });
+
+  @override
+  State<_BounceTile> createState() => _BounceTileState();
+}
+
+class _BounceTileState extends State<_BounceTile> with SingleTickerProviderStateMixin {
+  late final AnimationController _c =
+      AnimationController(vsync: this, duration: const Duration(milliseconds: 260));
+
+  late final Animation<double> _scale = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.88), weight: 25),
+    TweenSequenceItem(
+        tween: Tween(begin: 0.88, end: 1.14).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 40),
+    TweenSequenceItem(
+        tween: Tween(begin: 1.14, end: 1.0).chain(CurveTween(curve: Curves.bounceOut)),
+        weight: 35),
+  ]).animate(_c);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
   }
 
-  Widget _hairStyleRow() {
-    return Row(
-      children: HairStyle.values.map((style) {
-        final selected = _hairStyle == style;
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => setState(() => _hairStyle = style),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              decoration: BoxDecoration(
-                color: selected ? AppColors.blue.withOpacity(0.15) : AppColors.bgCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: selected ? AppColors.blue : AppColors.borderDim,
+  @override
+  Widget build(BuildContext context) {
+    final sel = widget.selected;
+
+    Widget tile = Container(
+      margin: EdgeInsets.only(top: sel ? 4 : 0, bottom: sel ? 0 : 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: sel ? Rb.gold : Colors.black, width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black,
+            offset: Offset(0, sel ? 0 : 4),
+            blurRadius: 0,
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            widget.child,
+            if (sel)
+              const Align(
+                alignment: Alignment.bottomRight,
+                child: Padding(
+                  padding: EdgeInsets.all(2),
+                  child: BlockText('✔', size: 14, stroke: 3.5),
                 ),
               ),
-              child: Column(
-                children: [
-                  Icon(
-                    Icons.face,
-                    color: selected ? AppColors.blue : AppColors.textSub,
-                    size: 20,
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    style.label,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: selected ? AppColors.blue : AppColors.textSub,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }).toList(),
+          ],
+        ),
+      ),
     );
-  }
 
-  Color _colorFromHex(String hex) {
-    final cleaned = hex.replaceAll('#', '');
-    return Color(int.parse('FF$cleaned', radix: 16));
+    tile = widget.size == null
+        ? AspectRatio(aspectRatio: 0.8, child: tile)
+        : SizedBox(width: widget.size, height: widget.size! + 4, child: tile);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        _c.forward(from: 0);
+        widget.onTap();
+      },
+      child: ScaleTransition(scale: _scale, child: tile),
+    );
   }
 }

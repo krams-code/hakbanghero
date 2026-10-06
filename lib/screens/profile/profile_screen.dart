@@ -4,10 +4,13 @@ import 'package:flutter/material.dart';
 
 import 'package:hakbanghero/models/activity_model.dart';
 
+import '../../state/evolution_state.dart';
 import '../../utils/player_stats.dart';
 import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import '../../widgets/avatar_preview.dart';
+import '../../widgets/block_inputs.dart' show blockSnack;
 import '../../widgets/block_ui.dart';
+import '../../widgets/evolution_checkin_dialog.dart';
 import '../../widgets/global_top_bar.dart' show confirmLogout;
 import '../character/character_creation_screen.dart';
 
@@ -65,12 +68,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _fit = FitnessStats.compute(
           sessions,
           weightKg: (data['weight_kg'] as num?)?.toDouble(),
+          enduranceBonus: (data['endurance_bonus'] as num?)?.toInt() ?? 0,
         );
         _loading = false;
       });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// Weekly / monthly weight check-in. The avatar swap itself is global and
+  /// instant (EvolutionState); here we only refresh stats and say what happened.
+  Future<void> _checkIn() async {
+    final r = await showEvolutionCheckIn(context);
+    if (!mounted || r == null) return;
+    _load();
+    blockSnack(
+      context,
+      r.improved
+          ? '🔥 EVOLVED INTO ${r.after.label.toUpperCase()}!'
+              '${r.enduranceAwarded ? '  +${EvolutionState.enduranceBonus} ENDURANCE' : ''}'
+          : '💾 Check-in saved: ${r.after.label}',
+    );
   }
 
   Future<void> _editHero() async {
@@ -210,6 +229,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             child: AvatarPreview.fromData(
                               _user,
                               filterQuality: FilterQuality.none,
+                              ownerUid: FirebaseAuth.instance.currentUser?.uid,
                             ),
                           ),
                         ],
@@ -257,6 +277,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     onTap: _editHero,
                     child: const BlockText('✏️ EDIT HERO', size: 11, stroke: 3),
+                  ),
+                ),
+                Positioned(
+                  right: 10,
+                  top: 50,
+                  child: PressBlock(
+                    color: Rb.green,
+                    edge: Rb.greenEdge,
+                    depth: 4,
+                    radius: 10,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    onTap: _checkIn,
+                    child: BlockText(
+                      EvolutionState.isCheckInDue(_user)
+                          ? '⚖️ CHECK-IN ●'
+                          : '⚖️ CHECK-IN',
+                      size: 11,
+                      stroke: 3,
+                    ),
                   ),
                 ),
               ],

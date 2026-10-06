@@ -6,7 +6,8 @@ import 'package:flutter/material.dart';
 import 'block_ui.dart';
 import 'tutorial_keys.dart';
 
-const _coachDir = 'assets/images/guide';
+/// Tutorial guide poses: coach_1 (thumbs up), coach_2 (open hand), coach_3 (clipboard).
+const kCoachDir = 'assets/images/guide';
 
 class _TutorialStep {
   final GlobalKey target;
@@ -39,7 +40,7 @@ final List<_TutorialStep> _steps = [
     'START TRAINING',
     'Ready to train? Tap this central block anytime to pick your pace and '
         'enter your first fitness stage battle!',
-    'coach_4.png',
+    'coach_3.png',
     radius: 24,
   ),
 ];
@@ -169,7 +170,7 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
                       ? (Rect.lerp(_from, _to, t) ?? _to)
                       : Rect.zero;
                   return CustomPaint(
-                    painter: _SpotlightPainter(
+                    painter: SpotlightPainter(
                       rect: rect,
                       radius: step.radius,
                       glow: _pulse.value,
@@ -221,7 +222,7 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
               child: child,
             ),
             child: Image.asset(
-              '$_coachDir/${step.pose}',
+              '$kCoachDir/${step.pose}',
               height: 150,
               filterQuality: FilterQuality.medium,
               errorBuilder: (_, __, ___) => const SizedBox(
@@ -338,26 +339,30 @@ class _TutorialOverlayState extends State<_TutorialOverlay>
   );
 }
 
-class _SpotlightPainter extends CustomPainter {
+class SpotlightPainter extends CustomPainter {
   final Rect rect;
   final double radius;
   final double glow;
   final bool show;
 
-  _SpotlightPainter({
+  /// How dark the dimmed screen is (0..1).
+  final double dim;
+
+  SpotlightPainter({
     required this.rect,
     required this.radius,
     required this.glow,
     required this.show,
+    this.dim = 0.82,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final full = Offset.zero & size;
-    final dim = Paint()..color = Colors.black.withOpacity(0.82);
+    final dimPaint = Paint()..color = Colors.black.withOpacity(dim);
 
     if (!show) {
-      canvas.drawRect(full, dim);
+      canvas.drawRect(full, dimPaint);
       return;
     }
 
@@ -367,7 +372,7 @@ class _SpotlightPainter extends CustomPainter {
       Path()..addRect(full),
       Path()..addRRect(hole),
     );
-    canvas.drawPath(path, dim);
+    canvas.drawPath(path, dimPaint);
 
     // chunky border: black outline + pulsing gold ring
     canvas.drawRRect(
@@ -388,5 +393,5 @@ class _SpotlightPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SpotlightPainter old) => true;
+  bool shouldRepaint(covariant SpotlightPainter old) => true;
 }

@@ -213,7 +213,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
             padding: EdgeInsets.zero,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(9),
-              child: _BustThumb(data: entry.data, size: 66),
+              child: _BustThumb(uid: entry.uid, data: entry.data, size: 66),
             ),
           ),
           const SizedBox(width: 10),
@@ -328,7 +328,10 @@ class _RankTile extends StatelessWidget {
 class _BustThumb extends StatelessWidget {
   final Map<String, dynamic> data;
   final double size;
-  const _BustThumb({required this.data, required this.size});
+  /// Whose hero this is. If it is the signed-in player, the body follows the
+  /// global evolution state (instant). Other players are shown as stored.
+  final String uid;
+  const _BustThumb({required this.uid, required this.data, required this.size});
 
   @override
   Widget build(BuildContext context) {
@@ -344,7 +347,7 @@ class _BustThumb extends StatelessWidget {
           maxHeight: double.infinity,
           child: Transform.translate(
             offset: Offset(0, size * 0.2), // room for tall hair above the head
-            child: HeroSprite.fromData(data, height: size * 2.4),
+            child: HeroSprite.fromData(data, height: size * 2.4, ownerUid: uid),
           ),
         ),
       ),

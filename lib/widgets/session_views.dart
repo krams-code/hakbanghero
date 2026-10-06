@@ -3,9 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:hakbanghero/models/activity_model.dart';
 import 'package:hakbanghero/models/daily_quest_definitions.dart';
 
+import '../challenges/challenge_engine.dart';
 import 'block_ui.dart';
-import 'game_stage.dart';
+import 'challenge_overlay.dart';
+import 'live_tracker_animation.dart';
+import 'neon_alert_border.dart';
 import 'session_avatar.dart';
+import 'tutorial_keys.dart';
 
 const _yellow = Color(0xFFFFD21F);
 const _yellowEdge = Color(0xFF8A6D00);
@@ -36,6 +40,11 @@ class TrackingView extends StatelessWidget {
   final VoidCallback onPause;
   final VoidCallback onFinish;
 
+  /// Sudden-challenge engine. When it has a live challenge the sprite goes to
+  /// max velocity, a neon-red electric border frames the dashboard and the
+  /// pop-up / countdown overlay is drawn on top. Null = no challenges.
+  final ChallengeEngine? challenge;
+
   const TrackingView({
     super.key,
     required this.type,
@@ -48,10 +57,27 @@ class TrackingView extends StatelessWidget {
     required this.maxSpeedKmh,
     required this.onPause,
     required this.onFinish,
+    this.challenge,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = challenge;
+    if (c == null) return _content(context, false);
+
+    return ListenableBuilder(
+      listenable: c,
+      builder: (ctx, _) => Stack(
+        children: [
+          Positioned.fill(child: _content(ctx, c.isActive)),
+          Positioned.fill(child: NeonAlertBorder(active: c.isActive)),
+          Positioned.fill(child: ChallengeOverlay(engine: c)),
+        ],
+      ),
+    );
+  }
+
+  Widget _content(BuildContext context, bool boost) {
     final (tc, te) = _typeColors(type);
 
     return SafeArea(
@@ -102,10 +128,12 @@ class TrackingView extends StatelessWidget {
 
             // Animated game stage fills the (formerly empty) middle
             Expanded(
-              child: GameStage(
-                moving: moving,
-                speedKmh: speedKmh,
+              // Sprite-loop runner + parallax scenery. Speed 0 -> idle; the
+              // stance and frame rate follow the real GPS speed.
+              child: LiveTrackerAnimation(
+                currentUserSpeedKmh: moving ? speedKmh : 0,
                 paused: paused,
+                boost: boost,
               ),
             ),
             const SizedBox(height: 14),
@@ -296,12 +324,16 @@ class SessionSummarySheet extends StatelessWidget {
   final List<DailyQuest> completedQuests;
   final VoidCallback onDone;
 
+  /// Sudden challenges attempted during the run (won and lost).
+  final List<ChallengeRecord> challenges;
+
   const SessionSummarySheet({
     super.key,
     required this.session,
     required this.isSaving,
     required this.completedQuests,
     required this.onDone,
+    this.challenges = const [],
   });
 
   @override
@@ -395,6 +427,13 @@ class SessionSummarySheet extends StatelessWidget {
                 ]),
                 const SizedBox(height: 12),
 
+                // Rewards area — spotlighted by the Phase 2 tutorial (step 4)
+                KeyedSubtree(
+                  key: TutorialKeys.rewards,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                 // Rewards — glossy gold inventory banner
                 Block(
                   color: Rb.gold,
@@ -424,6 +463,11 @@ class SessionSummarySheet extends StatelessWidget {
                     ],
                   ),
                 ),
+
+                if (challenges.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _challengePanel(),
+                ],
 
                 if (completedQuests.isNotEmpty) ...[
                   const SizedBox(height: 12),
@@ -471,6 +515,10 @@ class SessionSummarySheet extends StatelessWidget {
                   ),
                 ],
 
+                    ],
+                  ),
+                ),
+
                 if (session.userPick != session.type) ...[
                   const SizedBox(height: 12),
                   Block(
@@ -515,6 +563,92 @@ class SessionSummarySheet extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Sudden-challenge results + the loot chest drop.
+  Widget _challengePanel() {
+    final chests = challenges.where((c) => c.lootChest).length;
+    final xp = challenges.fold<int>(0, (s, c) => s + c.bonusXp);
+    final gems = challenges.fold<int>(0, (s, c) => s + c.bonusGems);
+
+    return Block(
+      color: const Color(0xFF2A0A0E),
+      edge: const Color(0xFFFF2B4A),
+      depth: 5,
+      radius: 12,
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const BlockText('⚡ SUDDEN QUESTS',
+              size: 13, stroke: 3.5, color: _yellow),
+          const SizedBox(height: 8),
+          for (final c in challenges)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(children: [
+                Expanded(
+                  child: BlockText(
+                    '${c.success ? '🏆' : '💥'} '
+                    '${c.kind == ChallengeKind.sprintBlitz ? 'SPRINT BLITZ' : 'CHASE THE BOSS'}',
+                    size: 12,
+                    stroke: 3,
+                    color: c.success ? Rb.neon : const Color(0xFFB8BDC4),
+                  ),
+                ),
+                BlockText(
+                  !c.success
+                      ? 'FAILED'
+                      : c.lootChest
+                          ? '+📦'
+                          : '+${c.bonusXp} EXP  +${c.bonusGems} 💎',
+                  size: 12,
+                  stroke: 3,
+                ),
+              ]),
+            ),
+          if (chests > 0) ...[
+            const SizedBox(height: 4),
+            Block(
+              color: Rb.gold,
+              edge: Rb.goldEdge,
+              depth: 5,
+              radius: 12,
+              gloss: true,
+              padding:
+                  const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: Column(
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: BlockText(
+                          chests > 1
+                              ? '📦 LOOT CHEST DETECTED! x$chests'
+                              : '📦 LOOT CHEST DETECTED!',
+                          size: 18,
+                          stroke: 4.5),
+                    ),
+                    const SizedBox(height: 2),
+                    const BlockText('Rare drop for beating the boss pace!',
+                        size: 10, stroke: 2.5, align: TextAlign.center),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (xp > 0 || gems > 0) ...[
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerRight,
+              child: BlockText('BONUS +$xp EXP  +$gems 💎 MANA CRYSTALS',
+                  size: 11, stroke: 3, color: Rb.neon),
+            ),
+          ],
+        ],
       ),
     );
   }

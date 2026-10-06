@@ -2,10 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../../models/character_profile.dart';
+import '../../models/outfit_catalog.dart';
 import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import '../../widgets/avatar_preview.dart';
 import '../../widgets/block_ui.dart';
-import '../shop/avatar_shop_screen.dart' show ShopItem, ShopCategory, ShopCropImage, kShopCatalog;
+import '../shop/avatar_shop_screen.dart'
+    show ShopItem, ShopCategory, ShopCropImage, kShopCatalog, isShopItemUnlocked;
 
 // ═════════════════════════════════════════════════════════════════
 //  GEAR — inventory chest. Only items the player ALREADY OWNS.
@@ -40,6 +43,12 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
   String _draft = ''; // clothes id shown on the preview ('' = none)
   bool _saving = false;
 
+  // refreshed from the user doc on every snapshot
+  Set<String> _unlocked = <String>{}; // ids the hero may wear (isUnlocked)
+  double _totalKm = 0;
+  String _bodyId = 'normal';
+  String? _gender;
+
   List<ShopItem> get _clothes =>
       kShopCatalog.where((i) => i.category == ShopCategory.clothes).toList();
 
@@ -52,9 +61,9 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
 
   static String _savedClothes(Map<String, dynamic> d) {
     final raw = d['equipped_clothes'];
-    if (raw is! List) return 'outfit_01'; // same default as the avatar
+    if (raw is! List) return StarterPack.activeOutfit; // same default as the avatar
     final l = raw.whereType<String>().toList();
-    return l.isEmpty ? '' : l.first;
+    return l.isEmpty ? '' : normalizeOutfitId(l.first);
   }
 
   void _snack(String msg) {
@@ -66,6 +75,11 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
   }
 
   Future<void> _equip(String uid) async {
+    // never save gear the hero has not unlocked
+    if (_draft.isNotEmpty && !_unlocked.contains(_draft)) {
+      _snack('🔒 That item is still locked.');
+      return;
+    }
     setState(() => _saving = true);
     try {
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
@@ -112,15 +126,27 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
             final owned = ownedRaw is List
                 ? ownedRaw.whereType<String>().toSet()
                 : <String>{};
-            final inventory = _clothes
-                .where((i) => i.isFree || owned.contains(i.id))
-                .toList();
+            _totalKm = (data['total_km'] as num?)?.toDouble() ?? 0.0;
+            _unlocked = {
+              for (final i in _clothes)
+                if (isShopItemUnlocked(i, owned: owned, totalKm: _totalKm)) i.id,
+            };
+            final p = CharacterProfile.fromFirestore(data);
+            final storedTier = data['body_tier'] as String?;
+            _bodyId = ((p.heightCm == null || p.weightKg == null) && storedTier != null
+                    ? BodyTierExt.fromId(storedTier)
+                    : p.bodyTier)
+                .id;
+            _gender = p.gender;
+
+            // every clothing item is listed; locked ones carry a lock overlay
+            final inventory = _clothes;
 
             return Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
               child: Column(
                 children: [
-                  _header(inventory.length),
+                  _header(_unlocked.length),
                   const SizedBox(height: 12),
                   Expanded(flex: 11, child: _stage(data)),
                   const SizedBox(height: 10),
@@ -338,7 +364,7 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
             child: shown.isEmpty
                 ? Center(
                     child: BlockText(
-                      'NOTHING OWNED FOR THIS SLOT YET.\nEarn gear on the Milestone path\nor buy it in the 🛒 Shop!',
+                      'NOTHING FOR THIS SLOT YET.\nEarn gear on the Milestone path\nor buy it in the 🛒 Shop!',
                       size: 11,
                       stroke: 3,
                       align: TextAlign.center,
@@ -362,8 +388,13 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
     );
   }
 
+  String _lockText(ShopItem item) => item.unlockKm > _totalKm
+      ? 'Run ${item.unlockKm.toStringAsFixed(1)} Total KM to Unlock'
+      : 'Buy it in the 🛒 Shop';
+
   Widget _tile(ShopItem item) {
-    final selected = _draft == item.id;
+    final isUnlocked = _unlocked.contains(item.id);
+    final selected = isUnlocked && _draft == item.id;
     return PressBlock(
       color: selected ? const Color(0xFF1E5A3A) : Rb.slate,
       edge: selected ? Rb.greenEdge : Colors.black,
@@ -372,6 +403,10 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
       forcePressed: selected,
       padding: const EdgeInsets.all(6),
       onTap: () {
+        if (!isUnlocked) {
+          _snack('🔒 ${item.name}: ${_lockText(item)}');
+          return;
+        }
         if (!item.equippable) {
           _snack('Art for ${item.name} is coming soon!');
           return;
@@ -391,10 +426,39 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(7),
-                child: item.asset == null
-                    ? Center(child: Text(item.emoji, style: const TextStyle(fontSize: 34)))
-                    : ShopCropImage(
-                        path: item.asset!, focusX: 142.5, focusY: 252, zoom: 0.55),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (item.asset == null)
+                      Center(child: Text(item.emoji, style: const TextStyle(fontSize: 34)))
+                    else
+                      ShopCropImage(
+                        // the version drawn for the hero's body
+                        path: clothesAssetFor(_bodyId, item.id, gender: _gender)
+                                .isEmpty
+                            ? item.asset!
+                            : clothesAssetFor(_bodyId, item.id, gender: _gender),
+                        fallbackPath: item.asset,
+                        focusX: 142.5,
+                        focusY: 252,
+                        zoom: 0.55,
+                      ),
+                    if (!isUnlocked)
+                      Container(
+                        color: const Color(0xEE3A3D40),
+                        padding: const EdgeInsets.all(3),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(Icons.lock, color: Colors.white, size: 22),
+                            const SizedBox(height: 2),
+                            BlockText(_lockText(item),
+                                size: 8, stroke: 2.5, align: TextAlign.center),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -414,7 +478,9 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
               width: double.infinity,
               child: Center(
                 child: BlockText(
-                  !item.equippable
+                  !isUnlocked
+                      ? '🔒 LOCKED'
+                      : !item.equippable
                       ? 'ART SOON'
                       : selected
                           ? '✔ ON MODEL'

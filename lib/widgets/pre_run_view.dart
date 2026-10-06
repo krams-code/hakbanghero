@@ -342,7 +342,10 @@ class PreRunView extends StatelessWidget {
                               top: 44,
                               width: kSpriteWidth,
                               height: kSpriteHeight,
-                              child: AvatarPreview.fromData(data),
+                              child: AvatarPreview.fromData(
+                                data,
+                                ownerUid: FirebaseAuth.instance.currentUser?.uid,
+                              ),
                             ),
                           ],
                         ),

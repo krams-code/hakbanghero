@@ -7,6 +7,7 @@ import '../../widgets/block_inputs.dart';
 import '../../widgets/block_ui.dart';
 import '../character/character_creation_screen.dart';
 import '../main_shell.dart';
+import '../../models/outfit_catalog.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -25,7 +26,9 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _obscure = true;
   bool _obscureConfirm = true;
   bool _submitted = false; // show field errors only after the first attempt
-  String? _gender; // 'male' | 'female'
+  /// The hero type picked on this screen: 'male' | 'female' (null until chosen).
+  /// Saved to users/{uid}.gender and used to route the avatar's body sprites.
+  String? selectedGender;
 
   static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$');
   static final _nameRe = RegExp(r'^[A-Za-z0-9_ ]{3,16}$');
@@ -59,7 +62,7 @@ class _SignupScreenState extends State<SignupScreen> {
       _emailError == null &&
       _passError == null &&
       _confirmError == null &&
-      _gender != null;
+      selectedGender != null;
 
   // ── flow ─────────────────────────────────────────────────────────────
   Future<void> _goHome() async {
@@ -107,7 +110,10 @@ class _SignupScreenState extends State<SignupScreen> {
         'height_cm': null,
         'weight_kg': null,
         'skin_tone': '#E0AC69',
-        'hair_style': 'short',
+        // Starter pack: every new hero starts with ONLY these free items
+        // (Wavy Mane, default face, white tank-top set).
+        ...StarterPack.toFirestore(),
+        'owned_items': StarterPack.ownedItems,
         'hair_color': '#1A1A1A',
         'body_tier': 'average',
       });
@@ -117,7 +123,7 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _signupEmail() async {
     setState(() => _submitted = true);
     if (!_valid) {
-      _snack(_gender == null
+      _snack(selectedGender == null
           ? 'Pick your hero type and fix the red fields.'
           : 'Fix the red fields to continue.');
       return;
@@ -132,7 +138,7 @@ class _SignupScreenState extends State<SignupScreen> {
       );
       if (cred.user != null) {
         await cred.user!.updateDisplayName(username);
-        await _createUserDoc(cred.user!, username, gender: _gender);
+        await _createUserDoc(cred.user!, username, gender: selectedGender);
         _goHome();
       }
     } on FirebaseAuthException catch (e) {
@@ -271,7 +277,7 @@ class _SignupScreenState extends State<SignupScreen> {
                             Expanded(child: _genderTile('female', '♀ FEMALE')),
                           ],
                         ),
-                        if (_submitted && _gender == null)
+                        if (_submitted && selectedGender == null)
                           const Padding(
                             padding: EdgeInsets.only(left: 4, top: 8),
                             child: BlockText('⚠ Choose a hero type',
@@ -413,7 +419,7 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Widget _genderTile(String value, String label) {
-    final sel = _gender == value;
+    final sel = selectedGender == value;
     return PressBlock(
       color: sel ? Rb.gold : Rb.slot,
       edge: sel ? Rb.goldEdge : Rb.slateEdge,
@@ -421,7 +427,7 @@ class _SignupScreenState extends State<SignupScreen> {
       radius: 14,
       forcePressed: sel,
       padding: const EdgeInsets.symmetric(vertical: 14),
-      onTap: () => setState(() => _gender = value),
+      onTap: () => setState(() => selectedGender = value),
       child: Center(child: BlockText(label, size: 14, stroke: 3.5)),
     );
   }

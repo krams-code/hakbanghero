@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../constants/asset_paths.dart';
+import '../models/body_composition.dart';
 import '../models/character_profile.dart';
+import '../models/outfit_catalog.dart';
+import '../state/evolution_state.dart';
 import '../theme/character_assets.dart';
 import 'avatar_layer_stack.dart';
 
@@ -9,11 +12,10 @@ import 'avatar_layer_stack.dart';
 const double kSpriteW = kSpriteWidth;
 const double kSpriteH = kSpriteHeight;
 
-/// Clothing catalog: id -> 286x512 transparent PNG.
-const Map<String, String> kClothingCatalog = {
-  'outfit_01': '$kClothesDir/outfit_01.png',
-};
-const List<String> kDefaultClothes = ['outfit_01'];
+/// Male clothing catalog: id -> 286x512 transparent PNG. (Female clothes are
+/// body-matched files, resolved by [clothesAssetFor].)
+const Map<String, String> kClothingCatalog = kMaleClothesCatalog;
+const List<String> kDefaultClothes = [kStarterOutfitId];
 
 /// Reusable character sprite. Pass data in, pick a display height.
 /// Scales the whole 286x512 stack as one unit (uniform aspect), so layers
@@ -36,6 +38,14 @@ class HeroSprite extends StatelessWidget {
 
   final double height;
 
+  /// uid of the player shown. When it is the signed-in hero, [bodyType]
+  /// follows [EvolutionState.composition] so a check-in swaps the body
+  /// instantly (e.g. in the player's own leaderboard row). Null = static.
+  final String? ownerUid;
+
+  /// 'male' | 'female' | null (= male). Picks the body sheet, see [bodyAssetFor].
+  final String? gender;
+
   const HeroSprite({
     super.key,
     required this.bodyType,
@@ -47,6 +57,8 @@ class HeroSprite extends StatelessWidget {
     this.gearLayers = const [],
     this.helmLayer,
     this.height = 220,
+    this.ownerUid,
+    this.gender,
   });
 
   factory HeroSprite.fromProfile(
@@ -68,6 +80,7 @@ class HeroSprite extends StatelessWidget {
         gearLayers: gearLayers,
         helmLayer: helmLayer,
         height: height,
+        gender: p.gender,
       );
 
   /// Build straight from a Firestore user/leaderboard map (null-safe).
@@ -75,6 +88,7 @@ class HeroSprite extends StatelessWidget {
     Map<String, dynamic>? data, {
     Key? key,
     double height = 220,
+    String? ownerUid,
   }) {
     final d = data ?? const <String, dynamic>{};
     final p = CharacterProfile.fromFirestore(d);
@@ -94,11 +108,25 @@ class HeroSprite extends StatelessWidget {
           ? rawClothes.whereType<String>().toList()
           : kDefaultClothes,
       height: height,
+      ownerUid: ownerUid,
+      gender: p.gender,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final owner = ownerUid;
+    if (owner == null) return _sprite(bodyType);
+
+    // The signed-in hero: follow the global form (instant, pre-cached PNGs).
+    return ValueListenableBuilder<BodyCompositionState>(
+      valueListenable: EvolutionState.instance.composition,
+      builder: (_, form, __) =>
+          _sprite(EvolutionState.instance.isOwner(owner) ? form.tier : bodyType),
+    );
+  }
+
+  Widget _sprite(BodyTier tier) {
     final width = height * kSpriteW / kSpriteH;
     final scale = height / kSpriteH;
 
@@ -117,12 +145,14 @@ class HeroSprite extends StatelessWidget {
             width: kSpriteW,
             height: kSpriteH,
             child: AvatarLayerStack(
-              bodyPath: '$kCharacterDir/${bodyType.assetName}',
+              bodyPath: bodyAssetFor(tier, gender),
               facePath: face.assetPath,
               hairPath: hairStyle.assetPath,
+              // body type + outfit -> the PNG drawn for exactly that body
               gearPaths: [
                 for (final id in equippedClothes)
-                  if (kClothingCatalog[id] != null) kClothingCatalog[id]!,
+                  if (clothesAssetFor(tier.id, id, gender: gender).isNotEmpty)
+                    clothesAssetFor(tier.id, id, gender: gender),
               ],
               overlays: [...gearLayers, if (helmLayer != null) helmLayer!],
               skinTone: skinTone,

@@ -85,7 +85,7 @@ class _GameStageState extends State<GameStage>
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: CustomPaint(
-                      painter: _SceneBackPainter(_scroll, groundH),
+                      painter: SceneBackPainter(_scroll, groundH),
                     ),
                   ),
                 ),
@@ -132,10 +132,12 @@ class _GameStageState extends State<GameStage>
   }
 }
 
-class _SceneBackPainter extends CustomPainter {
+/// Parallax scenery painter (clouds, hills, trees, road). `scroll` is the
+/// distance travelled in px; each layer moves at its own fraction of it.
+class SceneBackPainter extends CustomPainter {
   final ValueNotifier<double> scroll;
   final double groundH;
-  _SceneBackPainter(this.scroll, this.groundH) : super(repaint: scroll);
+  SceneBackPainter(this.scroll, this.groundH) : super(repaint: scroll);
 
   final Paint _p = Paint()..isAntiAlias = false;
 
@@ -233,6 +235,6 @@ class _SceneBackPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SceneBackPainter old) =>
+  bool shouldRepaint(covariant SceneBackPainter old) =>
       old.groundH != groundH;
 }
