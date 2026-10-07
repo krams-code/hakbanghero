@@ -54,3 +54,5 @@ flutter:
     - assets/fonts/
     - assets/animations/
     - assets/audio/
+    - assets/images/icons/
+    - assets/images/warmup/

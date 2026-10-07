@@ -6,6 +6,7 @@ import 'package:hakbanghero/models/activity_model.dart';
 
 import '../../state/evolution_state.dart';
 import '../../utils/player_stats.dart';
+import '../../utils/xp_milestones.dart';
 import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import '../../widgets/avatar_preview.dart';
 import '../../widgets/block_inputs.dart' show blockSnack;
@@ -333,6 +334,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             stroke: 2.5,
             color: const Color(0xFFB8BDC4),
           ),
+          const SizedBox(height: 4),
+          BlockText(
+            nextXpMilestone((_user['xp'] as num?)?.toInt() ?? 0).text,
+            size: 10,
+            stroke: 2.5,
+            color: Rb.gold,
+          ),
         ],
       ),
     );
@@ -340,30 +348,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // ── currency ─────────────────────────────────────────────────────────
   Widget _currencyRow() {
-    Widget chip(String emoji, Object v, String label, Color c, Color e) => Expanded(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 3),
-            child: Block(
-              color: c,
-              edge: e,
-              depth: 4,
-              radius: 12,
-              padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
-              child: Column(children: [
-                Text(emoji, style: const TextStyle(fontSize: 18)),
-                FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: BlockText(_fmt((v as num).toInt()), size: 16, stroke: 4)),
-                BlockText(label, size: 8, stroke: 2.5),
-              ]),
-            ),
+    // Single currency: Mana Crystals fills the whole slot.
+    return Block(
+      color: const Color(0xFF2EC4FF),
+      edge: const Color(0xFF0A6C99),
+      depth: 5,
+      radius: 12,
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Text('💎', style: TextStyle(fontSize: 26)),
+          const SizedBox(width: 10),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: BlockText(_fmt((_user['gems'] as num?)?.toInt() ?? 0),
+                size: 22, stroke: 4.5),
           ),
-        );
-    return Row(children: [
-      chip('🪙', _user['coins'] ?? 0, 'COINS', const Color(0xFFB8860B), const Color(0xFF5A4305)),
-      chip('💎', _user['gems'] ?? 0, 'MANA CRYSTALS', const Color(0xFF2EC4FF), const Color(0xFF0A6C99)),
-      chip('🔮', _user['heroic_souls'] ?? 0, 'SOULS', const Color(0xFF9B59FF), const Color(0xFF4B2A8A)),
-    ]);
+          const SizedBox(width: 10),
+          const BlockText('MANA CRYSTALS', size: 11, stroke: 3),
+        ],
+      ),
+    );
   }
 
   // ── tabs ─────────────────────────────────────────────────────────────

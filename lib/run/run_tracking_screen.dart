@@ -749,6 +749,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
       case _Phase.warmUp:
         return WarmUpView(
+          activityType: _userPick,
           onComplete: _startTracking,
           onSkip: _skipWarmUp,
         );

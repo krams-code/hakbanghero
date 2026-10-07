@@ -38,7 +38,6 @@ class GlobalTopBar extends StatelessWidget {
           final name = (d['username'] as String?)?.trim();
           final level = LevelProgress.fromXp((d['xp'] as num?)?.toInt() ?? 0).level;
           final gems = (d['gems'] as num?)?.toInt() ?? 0;
-          final coins = (d['coins'] as num?)?.toInt() ?? 0;
 
           return Row(
             children: [
@@ -100,8 +99,6 @@ class GlobalTopBar extends StatelessWidget {
                 ),
               ),
               _chip('💎 $gems', Rb.blue, Rb.blueEdge),
-              const SizedBox(width: 6),
-              _chip('🪙 $coins', Rb.orange, Rb.orangeEdge),
             ],
           );
         },
@@ -209,7 +206,6 @@ class _PlayerSheet extends StatelessWidget {
     final xp = (data['xp'] as num?)?.toInt() ?? 0;
     final km = (data['total_km'] as num?)?.toDouble() ?? 0;
     final sessions = (data['total_sessions'] as num?)?.toInt() ?? 0;
-    final coins = (data['coins'] as num?)?.toInt() ?? 0;
     final gems = (data['gems'] as num?)?.toInt() ?? 0;
 
     Widget stat(String emoji, String value, String label, Color c, Color e) =>
@@ -264,7 +260,6 @@ class _PlayerSheet extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(children: [
                   stat('🎯', '$sessions', 'SESSIONS', Rb.orange, Rb.orangeEdge),
-                  stat('🪙', '$coins', 'COINS', const Color(0xFFB8860B), const Color(0xFF5A4305)),
                   stat('💎', '$gems', 'CRYSTALS', const Color(0xFF2EC4FF), const Color(0xFF0A6C99)),
                 ]),
                 const SizedBox(height: 14),

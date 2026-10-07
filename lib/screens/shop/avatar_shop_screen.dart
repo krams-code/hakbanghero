@@ -6,6 +6,7 @@ import '../../models/character_profile.dart';
 import '../../models/outfit_catalog.dart';
 import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import '../../widgets/avatar_preview.dart';
+import '../../utils/player_stats.dart' show LevelProgress;
 import '../../widgets/block_ui.dart';
 
 // ═════════════════════════════════════════════════════════════════
@@ -26,6 +27,8 @@ import '../../widgets/block_ui.dart';
 //                                               added to owned_items
 //    milestone item     unlockKm > 0, price 0-> unlocked automatically once
 //                                               total_km reaches unlockKm
+//    XP milestone item  unlockLevel > 1, price 0 -> unlocked automatically once
+//                                               the hero reaches that level
 //    premium + km gate  both must be satisfied
 // ═════════════════════════════════════════════════════════════════
 
@@ -39,6 +42,7 @@ class ShopItem {
   final String name;
   final int price;          // gems; 0 = free
   final double unlockKm;    // > 0 = locked until this many total km
+  final int unlockLevel;    // > 1 = locked until the hero reaches this XP level
   final String? asset;      // PNG key (hair / clothes / faces)
   final String emoji;       // fallback icon when there's no art yet
   final String? colorHex;   // hair-colour items: '#RRGGBB'
@@ -50,6 +54,7 @@ class ShopItem {
     required this.name,
     this.price = 0,
     this.unlockKm = 0,
+    this.unlockLevel = 0,
     this.asset,
     this.emoji = '📦',
     this.colorHex,
@@ -57,7 +62,13 @@ class ShopItem {
   });
 
   /// Free and not milestone-gated = everyone owns it from the start.
-  bool get isFree => price == 0 && unlockKm == 0;
+  bool get isFree => price == 0 && unlockKm == 0 && unlockLevel <= 1;
+
+  /// Short reason shown on locks (km gate and/or level gate).
+  String lockLabel(double totalKm, int level) {
+    if (unlockLevel > level) return 'Reach LV $unlockLevel to Unlock';
+    return 'Run ${unlockKm.toStringAsFixed(1)} Total KM to Unlock';
+  }
 
   /// Can be shown on the avatar (has art, or is a background).
   bool get equippable =>
@@ -72,8 +83,10 @@ bool isShopItemUnlocked(
   ShopItem item, {
   required Set<String> owned,
   required double totalKm,
+  int level = 1,
 }) {
   if (item.isFree) return true; // starter pack
+  if (item.unlockLevel > level) return false; // XP milestone not reached yet
   if (item.unlockKm > totalKm) return false; // milestone not reached yet
   if (item.price == 0) return true; // pure milestone reward: auto-unlocks
   return owned.contains(item.id); // premium: only after the purchase
@@ -85,7 +98,7 @@ const List<ShopItem> kShopCatalog = [
   ShopItem(id: 'short_crop', category: ShopCategory.hair, name: 'Short Crop',
       asset: '$kHairDir/hair_14_short_crop.png', emoji: '💇'),
   ShopItem(id: 'warrior_spiky', category: ShopCategory.hair, name: 'Warrior Spiky',
-      price: 120, asset: '$kHairDir/hair_01_warrior_spiky.png', emoji: '💇'),
+      unlockLevel: 2, asset: '$kHairDir/hair_01_warrior_spiky.png', emoji: '💇'),
   ShopItem(id: 'classic_pompadour', category: ShopCategory.hair, name: 'Pompadour',
       price: 150, asset: '$kHairDir/hair_03_classic_pompadour.png', emoji: '💇'),
   // ⭐ starter hair (free for every new hero, see StarterPack)
@@ -147,6 +160,7 @@ const List<(ShopCategory, String, String)> _cats = [
 class _ShopData {
   final int gems;
   final double totalKm;
+  final int level;
   final Set<String> owned;
   final String hair, face, clothes, bg;
   final String bodyId, skinTone, hairColor;
@@ -155,6 +169,7 @@ class _ShopData {
   const _ShopData({
     required this.gems,
     required this.totalKm,
+    required this.level,
     required this.owned,
     required this.hair,
     required this.face,
@@ -184,6 +199,7 @@ class _ShopData {
     return _ShopData(
       gems: (d['gems'] as num?)?.toInt() ?? 0,
       totalKm: (d['total_km'] as num?)?.toDouble() ?? 0.0,
+      level: LevelProgress.fromXp((d['xp'] as num?)?.toInt() ?? 0).level,
       owned: ownedRaw is List ? ownedRaw.whereType<String>().toSet() : <String>{},
       hair: p.hairStyle.id,
       face: p.faceExpression.id,
@@ -252,13 +268,13 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
 
   /// `isUnlocked` for this player (see [isShopItemUnlocked]).
   bool _isOwned(ShopItem i, _ShopData s) =>
-      isShopItemUnlocked(i, owned: s.owned, totalKm: s.totalKm) ||
+      isShopItemUnlocked(i, owned: s.owned, totalKm: s.totalKm, level: s.level) ||
       // the colour you already wear is yours
       (i.category == ShopCategory.colors &&
           i.colorHex?.toUpperCase() == s.hairColor.toUpperCase());
 
   /// Locked behind a kilometre milestone that is not reached yet.
-  bool _isLocked(ShopItem i, _ShopData s) => !_isOwned(i, s) && i.unlockKm > s.totalKm;
+  bool _isLocked(ShopItem i, _ShopData s) => !_isOwned(i, s) && (i.unlockKm > s.totalKm || i.unlockLevel > s.level);
 
   List<ShopItem> _draftItems() {
     final out = <ShopItem>[];
@@ -308,14 +324,14 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   void _onItemTap(ShopItem item, _ShopData s) {
     if (!item.equippable) {
       _snack(_isLocked(item, s)
-          ? '🔒 Run ${_kmText(item.unlockKm)} Total KM to unlock ${item.name}'
+          ? '🔒 ${item.lockLabel(s.totalKm, s.level)}: ${item.name}'
           : 'Art for ${item.name} is coming soon!');
       return;
     }
     // Try-on: unowned and even distance-locked items go straight onto the
     // live mannequin. Nothing is bought until BUY EQUIPPED ITEM is tapped.
     if (_isLocked(item, s)) {
-      _snack('👀 Trying on ${item.name} — run ${_kmText(item.unlockKm)} Total KM to unlock it');
+      _snack('👀 Trying on ${item.name} — ${item.lockLabel(s.totalKm, s.level)}');
     }
     setState(() {
       // tapping equipped clothes again takes them off
@@ -565,7 +581,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
                   children: [
                     _preview(item, s),
                     if (locked)
-                      _lockMask(item)
+                      _lockMask(item, s)
                     else if (!isUnlocked)
                       _premiumLock(), // priced item, not bought yet
                   ],
@@ -618,7 +634,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     );
   }
 
-  Widget _lockMask(ShopItem item) {
+  Widget _lockMask(ShopItem item, _ShopData s) {
     return Container(
       color: const Color(0xEE3A3D40),
       padding: const EdgeInsets.all(4),
@@ -629,7 +645,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
             const Icon(Icons.lock, color: Colors.white, size: 24),
             const SizedBox(height: 4),
             BlockText(
-              'Run ${_kmText(item.unlockKm)} Total KM to Unlock',
+              item.lockLabel(s.totalKm, s.level),
               size: 9,
               stroke: 3,
               align: TextAlign.center,
@@ -720,7 +736,9 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
       fill = Rb.panel; edge = Rb.panelEdge;
     } else if (_lockedInDraft(s) != null) {
       final l = _lockedInDraft(s)!;
-      label = '🔒 UNLOCK AT ${_kmText(l.unlockKm)} KM';
+      label = l.unlockLevel > s.level
+          ? '🔒 UNLOCK AT LV ${l.unlockLevel}'
+          : '🔒 UNLOCK AT ${_kmText(l.unlockKm)} KM';
       sub = 'Remove ${l.name} to buy the rest';
       fill = const Color(0xFF4A4F55); edge = Rb.panelEdge;
     } else if (!changed) {

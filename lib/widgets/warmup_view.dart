@@ -1,83 +1,129 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
+import '../constants/app_icons.dart';
+import '../models/activity_model.dart' show ActivityType;
+import '../models/warmup_exercise.dart';
 import 'block_ui.dart';
+import 'demo_window.dart';
+import 'pixel_icon.dart';
+import 'warmup_stage.dart';
 
 const _yellow = Color(0xFFFFD21F);
 const _yellowEdge = Color(0xFF8A6D00);
+const _slate = Color(0xFF2F3640);
+const _slateLight = Color(0xFF454B54);
 
-/// Pre-Run Preparation (warm-up) in the Roblox block style.
-/// Same public API as before: [onComplete] when the routine finishes,
-/// [onSkip] when the player skips it.
+/// Pre-Run Preparation: an animated mini-game phase.
+///
+///  * idle      – the randomized TRAINING QUEST list (with demo windows)
+///  * running   – a scenic viewport (sky / clouds / trees / road scrolling
+///                to the RIGHT) with the player's avatar, a picture-in-picture
+///                demo of the current exercise, and an automatic step timer
+///
+/// When STEP n/n reaches 0, [onComplete] fires — the run screen then moves on
+/// to the Active Tracking stage. [onSkip] fires when the player skips.
 class WarmUpView extends StatefulWidget {
   final VoidCallback onComplete;
   final VoidCallback onSkip;
+
+  /// What the player is prepping for; decides which exercises can appear.
+  final ActivityType activityType;
+
+  /// Seconds each exercise stays on screen (configurable, default 30).
+  final int stepSeconds;
+
+  /// How many exercises make up one warm-up (the 1-2-3-4 slots).
+  final int stepCount;
 
   const WarmUpView({
     super.key,
     required this.onComplete,
     required this.onSkip,
+    this.activityType = ActivityType.run,
+    this.stepSeconds = 30,
+    this.stepCount = 4,
   });
 
   @override
   State<WarmUpView> createState() => _WarmUpViewState();
 }
 
-class _WarmUpViewState extends State<WarmUpView> {
-  Timer? _timer;
+class _WarmUpViewState extends State<WarmUpView>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _stepCtrl; // 0 → 1 over one step
+  late List<WarmUpEntry> _queue; // randomized exercises for THIS visit
   bool _started = false;
-  int _currentStep = 0;
-  int _secondsLeft = 8;
+  bool _done = false;
+  int _index = 0;
 
-  static const List<_Step> _steps = [
-    _Step('🚶', 'EASY MARCH',
-        'March or walk gently in place. Keep your movements relaxed.', 8),
-    _Step('🔄', 'ANKLE CIRCLES',
-        'Slowly rotate your ankles. Switch direction halfway through.', 8),
-    _Step('🦵', 'LEG SWINGS',
-        'Gently swing each leg forward and backward. Do not force the movement.',
-        8),
-    _Step('🏃', 'EASY WALK / JOG',
-        'Start moving comfortably and gradually prepare for your run.', 8),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _randomizeRoutine();
+    _stepCtrl = AnimationController(
+      vsync: this,
+      duration: Duration(seconds: widget.stepSeconds),
+    )..addStatusListener(_onStepStatus);
+  }
+
+  /// Shuffle the exercise database and fill the training slots. Runs every
+  /// time the screen is entered, so each session launch is different.
+  void _randomizeRoutine() {
+    _queue = pickWarmUpRoutine(widget.activityType, count: widget.stepCount);
+  }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _stepCtrl.removeStatusListener(_onStepStatus);
+    _stepCtrl.dispose();
     super.dispose();
   }
 
+  // ── sequence engine ───────────────────────────────────────────────────
+
   void _startRoutine() {
+    if (_queue.isEmpty) {
+      _finish();
+      return;
+    }
     setState(() {
       _started = true;
-      _currentStep = 0;
-      _secondsLeft = _steps[0].seconds;
+      _index = 0;
     });
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      if (_secondsLeft > 1) {
-        setState(() => _secondsLeft--);
-        return;
-      }
-      if (_currentStep < _steps.length - 1) {
-        setState(() {
-          _currentStep++;
-          _secondsLeft = _steps[_currentStep].seconds;
-        });
-      } else {
-        _timer?.cancel();
-        setState(() => _started = false);
-        widget.onComplete();
-      }
-    });
+    _stepCtrl.forward(from: 0);
+  }
+
+  void _onStepStatus(AnimationStatus st) {
+    if (st != AnimationStatus.completed || !mounted || _done) return;
+    if (_index < _queue.length - 1) {
+      setState(() => _index++); // slides the text out/in, bar resets below
+      _stepCtrl.forward(from: 0);
+    } else {
+      _finish();
+    }
+  }
+
+  void _finish() {
+    if (_done) return;
+    _done = true;
+    _stepCtrl.stop();
+    widget.onComplete(); // → Active Tracking stage
   }
 
   void _skip() {
-    _timer?.cancel();
+    if (_done) return;
+    _done = true;
+    _stepCtrl.stop();
     widget.onSkip();
   }
+
+  int get _secondsLeft =>
+      (widget.stepSeconds * (1 - _stepCtrl.value))
+          .ceil()
+          .clamp(0, widget.stepSeconds)
+          .toInt();
+
+  // ── build ─────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -88,18 +134,19 @@ class _WarmUpViewState extends State<WarmUpView> {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
           child: Column(
             children: [
-              Block(
-                color: Rb.hud,
-                edge: Rb.hudEdge,
-                depth: 6,
+              _SlateBlock(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 child: Column(
                   children: [
                     const FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: BlockText('⚔️ PRE-RUN PREPARATION',
-                          size: 20, stroke: 4.5),
+                      child: IconLabel(
+                        iconPath: AppIcons.gearShield,
+                        iconSize: 28,
+                        label: BlockText('PRE-RUN PREPARATION',
+                            size: 20, stroke: 4.5),
+                      ),
                     ),
                     const SizedBox(height: 6),
                     Text(
@@ -108,7 +155,7 @@ class _WarmUpViewState extends State<WarmUpView> {
                           : 'A short warm-up is recommended before every run.',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                        color: Color(0xFF2A2D31),
+                        color: Color(0xFFD7DADD),
                         fontSize: 12.5,
                         fontWeight: FontWeight.w800,
                       ),
@@ -117,7 +164,7 @@ class _WarmUpViewState extends State<WarmUpView> {
                 ),
               ),
               const SizedBox(height: 18),
-              if (_started) _active(_steps[_currentStep]) else _preview(),
+              if (_started) _active() else _preview(),
             ],
           ),
         ),
@@ -125,8 +172,9 @@ class _WarmUpViewState extends State<WarmUpView> {
     );
   }
 
-  // ── Idle: quest list + big buttons ────────────────────────────────────
+  // ── Idle: randomized quest list + big buttons ─────────────────────────
   Widget _preview() {
+    final total = _queue.length * widget.stepSeconds;
     return Column(
       children: [
         Block(
@@ -138,17 +186,18 @@ class _WarmUpViewState extends State<WarmUpView> {
             children: [
               const Align(
                 alignment: Alignment.centerLeft,
-                child: BlockText('📜 TRAINING QUEST', size: 14, stroke: 3.5),
+                child: BlockText('TRAINING QUEST', size: 14, stroke: 3.5),
               ),
               const SizedBox(height: 12),
-              for (var i = 0; i < _steps.length; i++)
+              for (var i = 0; i < _queue.length; i++)
                 Padding(
-                  padding: EdgeInsets.only(bottom: i == _steps.length - 1 ? 0 : 10),
-                  child: _stepRow(i + 1, _steps[i]),
+                  padding:
+                      EdgeInsets.only(bottom: i == _queue.length - 1 ? 0 : 10),
+                  child: _stepRow(i + 1, _queue[i]),
                 ),
               const SizedBox(height: 12),
-              const BlockText('⏱ ABOUT 32 SECONDS',
-                  size: 11, stroke: 3, color: Color(0xFFB8BDC4)),
+              BlockText('ABOUT $total SECONDS',
+                  size: 11, stroke: 3, color: const Color(0xFFB8BDC4)),
             ],
           ),
         ),
@@ -163,26 +212,17 @@ class _WarmUpViewState extends State<WarmUpView> {
           child: const SizedBox(
             width: double.infinity,
             child: Center(
-              child: BlockText('🔥 START WARM-UP', size: 22, stroke: 5),
+              child: IconLabel(
+                iconPath: AppIcons.runFire,
+                iconSize: 30,
+                gap: 8,
+                label: BlockText('START WARM-UP', size: 22, stroke: 5),
+              ),
             ),
           ),
         ),
         const SizedBox(height: 18),
-        PressBlock(
-          color: const Color(0xFF6B7078),
-          edge: const Color(0xFF1B1D20),
-          depth: 3,
-          radius: 12,
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          onTap: _skip,
-          child: const SizedBox(
-            width: double.infinity,
-            child: Center(
-              child: BlockText('SKIP', size: 15, stroke: 3.5,
-                  color: Color(0xFFD7DADD)),
-            ),
-          ),
-        ),
+        _SlateButton(label: 'SKIP', onTap: _skip),
         const SizedBox(height: 10),
         const Text(
           'You can skip the warm-up. There is no XP penalty for skipping.',
@@ -197,7 +237,7 @@ class _WarmUpViewState extends State<WarmUpView> {
     );
   }
 
-  Widget _stepRow(int n, _Step s) {
+  Widget _stepRow(int n, WarmUpEntry e) {
     return Block(
       color: Rb.slot,
       edge: Rb.panelEdge,
@@ -206,7 +246,6 @@ class _WarmUpViewState extends State<WarmUpView> {
       padding: const EdgeInsets.all(8),
       child: Row(
         children: [
-          // bright yellow square number tile
           Container(
             width: 42,
             height: 42,
@@ -216,119 +255,153 @@ class _WarmUpViewState extends State<WarmUpView> {
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: Colors.black, width: 3),
             ),
-            child: BlockText('$n',
-                size: 20, stroke: 4, color: Colors.black),
+            child: BlockText('$n', size: 20, stroke: 4, color: Colors.black),
           ),
           const SizedBox(width: 12),
-          Text(s.icon, style: const TextStyle(fontSize: 22)),
+          PixelIcon(e.exercise.iconPath, size: 28),
           const SizedBox(width: 10),
           Expanded(
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
-              child: BlockText(s.title, size: 15, stroke: 3.5),
+              child: BlockText(e.exercise.name.toUpperCase(),
+                  size: 15, stroke: 3.5),
             ),
           ),
+          const SizedBox(width: 8),
+          DemoWindow(path: e.exercise.demoPath, size: 64),
         ],
       ),
     );
   }
 
-  // ── Running routine ───────────────────────────────────────────────────
-  Widget _active(_Step step) {
-    final progress =
-        (_currentStep + 1 - _secondsLeft / step.seconds) / _steps.length;
+  // ── Running: the animated mini-game phase ─────────────────────────────
+  Widget _active() {
+    final entry = _queue[_index];
 
     return Column(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Block(
-                color: Rb.blue,
-                edge: Rb.blueEdge,
-                depth: 5,
-                radius: 12,
-                gloss: true,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Center(
-                  child: BlockText(
-                      'STEP ${_currentStep + 1}/${_steps.length}',
-                      size: 15,
-                      stroke: 3.5),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Block(
-              color: _yellow,
-              edge: _yellowEdge,
-              depth: 5,
-              radius: 12,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              child: BlockText('${_secondsLeft}s',
-                  size: 20, stroke: 4, color: Colors.black),
-            ),
-          ],
-        ),
-        const SizedBox(height: 14),
-        BlockBar(value: progress, height: 22, color: Rb.neon),
-        const SizedBox(height: 18),
-        Block(
-          color: Rb.panel,
-          edge: Rb.panelEdge,
-          depth: 7,
-          padding: const EdgeInsets.fromLTRB(16, 22, 16, 22),
-          child: Column(
+        // STEP n/n  +  seconds score tile
+        AnimatedBuilder(
+          animation: _stepCtrl,
+          builder: (_, __) => Row(
             children: [
-              Block(
-                color: _yellow,
-                edge: _yellowEdge,
-                depth: 6,
-                radius: 18,
-                padding: EdgeInsets.zero,
-                child: SizedBox(
-                  width: 110,
-                  height: 110,
-                  child: Center(
-                    child: Text(step.icon,
-                        style: const TextStyle(fontSize: 56)),
+              Expanded(
+                child: _Chunk(
+                  color: Rb.blue,
+                  radius: 16,
+                  depth: 7,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    alignment: Alignment.center,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: BlockText('STEP ${_index + 1}/${_queue.length}',
+                          size: 30, stroke: 6),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: BlockText(step.title, size: 24, stroke: 5),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                step.description,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFFD7DADD),
-                  fontSize: 13,
-                  height: 1.4,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(width: 12),
+              _Chunk(
+                color: _yellow,
+                radius: 16,
+                depth: 7,
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 104),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  alignment: Alignment.center,
+                  child: BlockText('${_secondsLeft}s',
+                      size: 32, stroke: 7, color: Colors.white),
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(height: 14),
+
+        // chunky loading track
+        AnimatedBuilder(
+          animation: _stepCtrl,
+          builder: (_, __) => _ChunkyTrack(value: _stepCtrl.value),
+        ),
+        const SizedBox(height: 18),
+
+        // animated viewport (scenic stage + avatar + demo PiP)
+        LayoutBuilder(builder: (context, c) {
+          final side = c.maxWidth.clamp(0.0, 420.0).toDouble();
+          return SizedBox(
+            width: side,
+            height: side * 0.92,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: WarmUpStage(demoPath: entry.exercise.demoPath),
+                ),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 14),
+
+        // exercise name + instruction, sliding in/out per step
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 380),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, anim) {
+            final incoming = child.key == ValueKey<int>(_index);
+            final tween = Tween<Offset>(
+              begin: incoming ? const Offset(1.0, 0) : const Offset(-1.0, 0),
+              end: Offset.zero,
+            );
+            return ClipRect(
+              child: SlideTransition(
+                position: tween.animate(anim),
+                child: FadeTransition(opacity: anim, child: child),
+              ),
+            );
+          },
+          child: KeyedSubtree(
+            key: ValueKey<int>(_index),
+            child: _exerciseText(entry),
+          ),
+        ),
         const SizedBox(height: 22),
-        PressBlock(
-          color: const Color(0xFF6B7078),
-          edge: const Color(0xFF1B1D20),
-          depth: 3,
+        _SlateButton(label: 'SKIP WARM-UP', onTap: _skip),
+      ],
+    );
+  }
+
+  Widget _exerciseText(WarmUpEntry e) {
+    return Column(
+      children: [
+        SizedBox(
+          width: double.infinity,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: BlockText(e.exercise.name.toUpperCase(),
+                size: 28, stroke: 6, align: TextAlign.center),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _SlateBlock(
+          color: _slateLight,
+          depth: 5,
           radius: 12,
-          padding: const EdgeInsets.symmetric(vertical: 13),
-          onTap: _skip,
-          child: const SizedBox(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: SizedBox(
             width: double.infinity,
-            child: Center(
-              child: BlockText('SKIP WARM-UP', size: 14, stroke: 3.5,
-                  color: Color(0xFFD7DADD)),
+            child: Text(
+              e.description,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13.5,
+                height: 1.35,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ),
@@ -337,10 +410,210 @@ class _WarmUpViewState extends State<WarmUpView> {
   }
 }
 
-class _Step {
-  final String icon;
-  final String title;
-  final String description;
-  final int seconds;
-  const _Step(this.icon, this.title, this.description, this.seconds);
+// ───────────────────────── building blocks ─────────────────────────
+
+/// A chunky colour block: 3px solid black border + hard bottom drop shadow.
+class _Chunk extends StatelessWidget {
+  final Color color;
+  final double radius;
+  final double depth;
+  final Widget child;
+  const _Chunk({
+    required this.color,
+    required this.child,
+    this.radius = 14,
+    this.depth = 6,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: depth),
+      child: Container(
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: Colors.black, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black,
+              offset: Offset(0, depth),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(radius - 3),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: FractionallySizedBox(
+                    heightFactor: 0.28,
+                    widthFactor: 1,
+                    child: ColoredBox(color: Colors.white.withValues(alpha: 0.18)),
+                  ),
+                ),
+              ),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dark slate card (header / description): 3px black border, hard shadow.
+class _SlateBlock extends StatelessWidget {
+  final Widget child;
+  final EdgeInsets padding;
+  final Color color;
+  final double depth;
+  final double radius;
+  const _SlateBlock({
+    required this.child,
+    this.padding = const EdgeInsets.all(12),
+    this.color = _slate,
+    this.depth = 6,
+    this.radius = 16,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: depth),
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: Colors.black, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black,
+              offset: Offset(0, depth),
+              blurRadius: 0,
+            ),
+          ],
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+/// Dark slate press button (SKIP / SKIP WARM-UP): sinks when pressed.
+class _SlateButton extends StatefulWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _SlateButton({required this.label, required this.onTap});
+
+  @override
+  State<_SlateButton> createState() => _SlateButtonState();
+}
+
+class _SlateButtonState extends State<_SlateButton> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    const depth = 6.0;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _down = true),
+      onTapCancel: () => setState(() => _down = false),
+      onTapUp: (_) => setState(() => _down = false),
+      onTap: widget.onTap,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: depth),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 70),
+          transform: Matrix4.translationValues(0, _down ? depth - 1 : 0, 0),
+          padding: const EdgeInsets.symmetric(vertical: 15),
+          decoration: BoxDecoration(
+            color: _slate,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.black, width: 3),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black,
+                offset: Offset(0, _down ? 1 : depth),
+                blurRadius: 0,
+              ),
+            ],
+          ),
+          child: Center(
+            child: BlockText(widget.label,
+                size: 16, stroke: 4, color: const Color(0xFFD7DADD)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Thick segmented loading track inside a heavy black frame.
+class _ChunkyTrack extends StatelessWidget {
+  final double value; // 0..1
+  const _ChunkyTrack({required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    final v = value.clamp(0.0, 1.0).toDouble();
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: const [
+          BoxShadow(color: Colors.black, offset: Offset(0, 5), blurRadius: 0),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SizedBox(
+          height: 34,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const ColoredBox(color: Color(0xFF3A3D40)),
+              FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: v,
+                child: const ColoredBox(color: Rb.neon),
+              ),
+              Align(
+                alignment: Alignment.topCenter,
+                child: FractionallySizedBox(
+                  heightFactor: 0.3,
+                  widthFactor: 1,
+                  child: ColoredBox(color: Colors.white.withValues(alpha: 0.22)),
+                ),
+              ),
+              // chunk dividers (10 segments)
+              CustomPaint(painter: _SegmentPainter()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SegmentPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..color = Colors.black.withValues(alpha: 0.55)
+      ..strokeWidth = 3;
+    for (var i = 1; i < 10; i++) {
+      final x = size.width * i / 10;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), p);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }

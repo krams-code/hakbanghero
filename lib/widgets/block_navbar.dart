@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../constants/app_icons.dart';
 import 'block_ui.dart';
+import 'pixel_icon.dart';
 import 'tutorial_keys.dart';
 
 /// Roblox-style bottom navigation bar.
@@ -26,10 +28,10 @@ class BlockNavBar extends StatelessWidget {
   static const double _pop = 28;
 
   static const List<(int, String, String)> _side = [
-    (0, '🛒', 'SHOP'),
-    (1, '🛡️', 'GEAR'),
-    (3, '🏆', 'RANKS'),
-    (4, '⚡', 'ACTIVITY'),
+    (0, AppIcons.shopChest, 'SHOP'),
+    (1, AppIcons.gearShield, 'GEAR'),
+    (3, AppIcons.ranksTrophy, 'RANKS'),
+    (4, AppIcons.activityBurst, 'ACTIVITY'),
   ];
 
   @override
@@ -57,10 +59,7 @@ class BlockNavBar extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    item.$2,
-                    style: const TextStyle(fontSize: 20),
-                  ),
+                  PixelIcon(item.$2, size: 24),
                   const SizedBox(height: 1),
                   FittedBox(
                     fit: BoxFit.scaleDown,

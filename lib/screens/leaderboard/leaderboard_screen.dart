@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../constants/app_icons.dart';
 import '../../widgets/block_ui.dart';
+import '../../widgets/pixel_icon.dart';
 import '../../widgets/hero_sprite.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -102,7 +104,16 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: const SizedBox(
         width: double.infinity,
-        child: BlockText('🏆 LEADERBOARD', size: 22, stroke: 5),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: IconLabel(
+            iconPath: AppIcons.ranksTrophy,
+            iconSize: 32,
+            gap: 8,
+            label: BlockText('LEADERBOARD', size: 22, stroke: 5),
+          ),
+        ),
       ),
     );
   }

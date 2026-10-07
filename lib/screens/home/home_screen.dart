@@ -5,6 +5,7 @@ import '../../run/run_tracking_screen.dart';
 import '../../models/daily_quest_definitions.dart';
 import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import '../../widgets/avatar_preview.dart';
+import '../../utils/xp_milestones.dart';
 import '../../widgets/block_ui.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -247,6 +248,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ),
           const SizedBox(height: 6),
           BlockBar(value: xpProgress, height: 22),
+          const SizedBox(height: 6),
+          BlockText(nextXpMilestone(xp).text,
+              size: 10, stroke: 2.5, color: Rb.gold),
         ],
       ),
     );

@@ -17,11 +17,16 @@ class GameStage extends StatefulWidget {
   final double speedKmh;
   final bool paused;
 
+  /// true = the scenery loop-scrolls to the RIGHT (warm-up countdown);
+  /// false (default) = to the left, as in the live tracker.
+  final bool scrollRight;
+
   const GameStage({
     super.key,
     required this.moving,
     required this.speedKmh,
     this.paused = false,
+    this.scrollRight = false,
   });
 
   @override
@@ -85,7 +90,8 @@ class _GameStageState extends State<GameStage>
                 Positioned.fill(
                   child: RepaintBoundary(
                     child: CustomPaint(
-                      painter: SceneBackPainter(_scroll, groundH),
+                      painter: SceneBackPainter(_scroll, groundH,
+                          rightward: widget.scrollRight),
                     ),
                   ),
                 ),
@@ -137,14 +143,16 @@ class _GameStageState extends State<GameStage>
 class SceneBackPainter extends CustomPainter {
   final ValueNotifier<double> scroll;
   final double groundH;
-  SceneBackPainter(this.scroll, this.groundH) : super(repaint: scroll);
+  final bool rightward;
+  SceneBackPainter(this.scroll, this.groundH, {this.rightward = false})
+      : super(repaint: scroll);
 
   final Paint _p = Paint()..isAntiAlias = false;
 
   // Draw `tile`-wide repeating content scrolling LEFT (world moves backward).
   void _loop(Canvas canvas, Size size, double offset, double tile,
       void Function(double x) draw) {
-    final start = -(offset % tile);
+    final start = rightward ? (offset % tile) - tile : -(offset % tile);
     for (double x = start; x < size.width + tile; x += tile) {
       draw(x);
     }
@@ -236,5 +244,5 @@ class SceneBackPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant SceneBackPainter old) =>
-      old.groundH != groundH;
+      old.groundH != groundH || old.rightward != rightward;
 }

@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/activity_model.dart';
+import '../../constants/app_icons.dart';
 import '../../widgets/block_ui.dart';
+import '../../widgets/pixel_icon.dart';
 
 /// Roblox block-style Activity log.
 class ActivityScreen extends StatefulWidget {
@@ -126,7 +128,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   // ── Filters ───────────────────────────────────────────────────────────
   Widget _filters() {
-    Widget chip(String label, ActivityType? t, Color c, Color e) {
+    Widget chip(String label, ActivityType? t, Color c, Color e,
+        {String? icon}) {
       final sel = _filter == t;
       return Expanded(
         child: Padding(
@@ -142,7 +145,14 @@ class _ActivityScreenState extends State<ActivityScreen> {
             child: Center(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
-                child: BlockText(label, size: 12, stroke: 3),
+                child: icon == null
+                    ? BlockText(label, size: 12, stroke: 3)
+                    : IconLabel(
+                        iconPath: icon,
+                        iconSize: 18,
+                        gap: 4,
+                        label: BlockText(label, size: 12, stroke: 3),
+                      ),
               ),
             ),
           ),
@@ -155,9 +165,9 @@ class _ActivityScreenState extends State<ActivityScreen> {
     final r = _colors(ActivityType.run);
     return Row(children: [
       chip('ALL', null, Rb.gold, Rb.goldEdge),
-      chip('🚶 WALK', ActivityType.walk, w.$1, w.$2),
-      chip('⚡ JOG', ActivityType.jog, j.$1, j.$2),
-      chip('🏃 RUN', ActivityType.run, r.$1, r.$2),
+      chip('WALK', ActivityType.walk, w.$1, w.$2, icon: AppIcons.walkShoe),
+      chip('JOG', ActivityType.jog, j.$1, j.$2, icon: AppIcons.jogBolt),
+      chip('RUN', ActivityType.run, r.$1, r.$2, icon: AppIcons.runFire),
     ]);
   }
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/character_profile.dart';
 import '../../models/outfit_catalog.dart';
+import '../../utils/player_stats.dart' show LevelProgress;
 import '../../widgets/avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import '../../widgets/avatar_preview.dart';
 import '../../widgets/block_ui.dart';
@@ -46,6 +47,7 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
   // refreshed from the user doc on every snapshot
   Set<String> _unlocked = <String>{}; // ids the hero may wear (isUnlocked)
   double _totalKm = 0;
+  int _level = 1;
   String _bodyId = 'normal';
   String? _gender;
 
@@ -127,9 +129,10 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
                 ? ownedRaw.whereType<String>().toSet()
                 : <String>{};
             _totalKm = (data['total_km'] as num?)?.toDouble() ?? 0.0;
+            _level = LevelProgress.fromXp((data['xp'] as num?)?.toInt() ?? 0).level;
             _unlocked = {
               for (final i in _clothes)
-                if (isShopItemUnlocked(i, owned: owned, totalKm: _totalKm)) i.id,
+                if (isShopItemUnlocked(i, owned: owned, totalKm: _totalKm, level: _level)) i.id,
             };
             final p = CharacterProfile.fromFirestore(data);
             final storedTier = data['body_tier'] as String?;
@@ -388,9 +391,10 @@ class _EquipmentScreenState extends State<EquipmentScreen> {
     );
   }
 
-  String _lockText(ShopItem item) => item.unlockKm > _totalKm
-      ? 'Run ${item.unlockKm.toStringAsFixed(1)} Total KM to Unlock'
-      : 'Buy it in the 🛒 Shop';
+  String _lockText(ShopItem item) =>
+      (item.unlockKm > _totalKm || item.unlockLevel > _level)
+          ? item.lockLabel(_totalKm, _level)
+          : 'Buy it in the 🛒 Shop';
 
   Widget _tile(ShopItem item) {
     final isUnlocked = _unlocked.contains(item.id);

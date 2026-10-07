@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/activity_model.dart';
 import 'avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import 'avatar_preview.dart';
+import '../constants/app_icons.dart';
 import 'block_ui.dart';
+import 'pixel_icon.dart';
 import 'tutorial_keys.dart';
 
 // ═════════════════════════════════════════════════════════════════
@@ -63,15 +65,16 @@ const List<Milestone> kMilestones = [
 
 class _Tier {
   final ActivityType type;
-  final String icon, label, range;
+  final String icon; // asset path of the pixel icon
+  final String label, range;
   final Color color, edge;
   const _Tier(this.type, this.icon, this.label, this.range, this.color, this.edge);
 }
 
 const List<_Tier> _tiers = [
-  _Tier(ActivityType.walk, '🚶', 'WALK', '< 6 km/h',     _walk, _walkEdge),
-  _Tier(ActivityType.jog,  '🏃', 'JOG',  '6-10 km/h',    _jog,  _jogEdge),
-  _Tier(ActivityType.run,  '🔥', 'RUN',  '10+ km/h',     _run,  _runEdge),
+  _Tier(ActivityType.walk, AppIcons.walkShoe, 'WALK', '< 6 km/h',     _walk, _walkEdge),
+  _Tier(ActivityType.jog,  AppIcons.jogBolt, 'JOG',  '6-10 km/h',    _jog,  _jogEdge),
+  _Tier(ActivityType.run,  AppIcons.runFire, 'RUN',  '10+ km/h',     _run,  _runEdge),
 ];
 
 _Tier _tierOf(ActivityType t) => _tiers.firstWhere((x) => x.type == t);
@@ -214,10 +217,15 @@ class PreRunView extends StatelessWidget {
                 radius: 12,
                 gloss: true,
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
-                child: BlockText(
-                  '🏆 MILESTONE $milestone / $total',
-                  size: 11,
-                  stroke: 3,
+                child: IconLabel(
+                  iconPath: AppIcons.ranksTrophy,
+                  iconSize: 16,
+                  gap: 4,
+                  label: BlockText(
+                    'MILESTONE $milestone / $total',
+                    size: 11,
+                    stroke: 3,
+                  ),
                 ),
               ),
             ],
@@ -364,7 +372,12 @@ class PreRunView extends StatelessWidget {
                       radius: 10,
                       gloss: true,
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                      child: BlockText('${tier.icon} ${tier.label}', size: 12, stroke: 3),
+                      child: IconLabel(
+                        iconPath: tier.icon,
+                        iconSize: 18,
+                        gap: 5,
+                        label: BlockText(tier.label, size: 12, stroke: 3),
+                      ),
                     ),
                   ),
                 ],
@@ -405,7 +418,7 @@ class PreRunView extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(t.icon, style: const TextStyle(fontSize: 26)),
+          PixelIcon(t.icon, size: 30),
           const SizedBox(height: 4),
           BlockText(t.label, size: 15, stroke: 3.5, align: TextAlign.center),
           const SizedBox(height: 2),
@@ -443,7 +456,7 @@ class PreRunView extends StatelessWidget {
               width: 54,
               height: 54,
               child: Center(
-                child: Text(next.emoji, style: const TextStyle(fontSize: 28)),
+                child: const PixelIcon(AppIcons.shopChest, size: 40), // reward chest
               ),
             ),
           ),
