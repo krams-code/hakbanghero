@@ -4,6 +4,7 @@ import 'package:hakbanghero/models/activity_model.dart';
 import 'package:hakbanghero/models/daily_quest_definitions.dart';
 
 import '../challenges/challenge_engine.dart';
+import '../models/ghost_run.dart';
 import 'block_ui.dart';
 import 'challenge_overlay.dart';
 import 'live_tracker_animation.dart';
@@ -45,6 +46,10 @@ class TrackingView extends StatelessWidget {
   /// pop-up / countdown overlay is drawn on top. Null = no challenges.
   final ChallengeEngine? challenge;
 
+  /// Ghost race (your own best run). Null = not racing.
+  final GhostRun? ghost;
+  final int elapsedSeconds;
+
   const TrackingView({
     super.key,
     required this.type,
@@ -58,6 +63,8 @@ class TrackingView extends StatelessWidget {
     required this.onPause,
     required this.onFinish,
     this.challenge,
+    this.ghost,
+    this.elapsedSeconds = 0,
   });
 
   @override
@@ -124,6 +131,10 @@ class TrackingView extends StatelessWidget {
                 ),
               ],
             ),
+            if (ghost != null) ...[
+              const SizedBox(height: 10),
+              _ghostBanner(ghost!),
+            ],
             const SizedBox(height: 14),
 
             // Animated game stage fills the (formerly empty) middle
@@ -194,6 +205,74 @@ class TrackingView extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// You vs your ghost: a two-lane track over the ghost's full distance.
+  Widget _ghostBanner(GhostRun g) {
+    final ghostKm = g.distanceAt(elapsedSeconds);
+    final gap = distanceKm - ghostKm; // + = you lead
+    final ahead = gap >= 0;
+    final lead = (gap.abs() * 1000).round();
+    final span = g.distanceKm <= 0 ? 1.0 : g.distanceKm;
+    double f(double km) => (km / span).clamp(0.0, 1.0).toDouble();
+
+    Widget lane(Color c, String icon, double frac) => SizedBox(
+          height: 18,
+          child: LayoutBuilder(builder: (context, box) {
+            final x = (box.maxWidth - 18) * frac;
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: Center(
+                    child: Container(
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Colors.black38,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: x,
+                  top: 0,
+                  child: Text(icon, style: const TextStyle(fontSize: 15)),
+                ),
+              ],
+            );
+          }),
+        );
+
+    return Block(
+      color: ahead ? const Color(0xFF1E6B45) : const Color(0xFF7A2A2A),
+      edge: ahead ? const Color(0xFF0B2E1D) : const Color(0xFF3A1010),
+      depth: 4,
+      radius: 12,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const BlockText('\u{1F47B} GHOST', size: 11, stroke: 3),
+              const Spacer(),
+              BlockText(
+                lead < 5
+                    ? 'NECK AND NECK'
+                    : ahead
+                        ? '$lead m AHEAD'
+                        : '$lead m BEHIND',
+                size: 12,
+                stroke: 3.5,
+                color: ahead ? Rb.neon : const Color(0xFFFFB3B3),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          lane(Rb.neon, '\u{1F3C3}', f(distanceKm)),
+          lane(const Color(0xFFB79CFF), '\u{1F47B}', f(ghostKm)),
+        ],
       ),
     );
   }
@@ -327,6 +406,12 @@ class SessionSummarySheet extends StatelessWidget {
   /// Sudden challenges attempted during the run (won and lost).
   final List<ChallengeRecord> challenges;
 
+  /// Result of the ghost race, if one was run.
+  final GhostResult? ghostResult;
+
+  /// Gem rewards of friend duels this run just won.
+  final List<String> duelRewards;
+
   const SessionSummarySheet({
     super.key,
     required this.session,
@@ -334,6 +419,8 @@ class SessionSummarySheet extends StatelessWidget {
     required this.completedQuests,
     required this.onDone,
     this.challenges = const [],
+    this.ghostResult,
+    this.duelRewards = const [],
   });
 
   @override
@@ -411,6 +498,22 @@ class SessionSummarySheet extends StatelessWidget {
                       size: 12,
                       stroke: 3),
                 ),
+                if (ghostResult != null) ...[
+                  const SizedBox(height: 10),
+                  _ghostResultRow(ghostResult!),
+                ],
+                for (final g in duelRewards) ...[
+                  const SizedBox(height: 10),
+                  Block(
+                    color: const Color(0xFF7A3B0A),
+                    edge: const Color(0xFF3A1B00),
+                    depth: 4,
+                    radius: 10,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    child: BlockText('\u2694\uFE0F DUEL WON! +\u{1F48E}$g',
+                        size: 12, stroke: 3, align: TextAlign.center),
+                  ),
+                ],
                 const SizedBox(height: 12),
 
                 Row(children: [
@@ -592,7 +695,7 @@ class SessionSummarySheet extends StatelessWidget {
                 Expanded(
                   child: BlockText(
                     '${c.success ? '🏆' : '💥'} '
-                    '${c.kind == ChallengeKind.sprintBlitz ? 'SPRINT BLITZ' : 'CHASE THE BOSS'}',
+                    '${c.kind == ChallengeKind.sprintBlitz ? 'SPRINT BLITZ' : 'PACE KEEPER'}',
                     size: 12,
                     stroke: 3,
                     color: c.success ? Rb.neon : const Color(0xFFB8BDC4),
@@ -633,7 +736,7 @@ class SessionSummarySheet extends StatelessWidget {
                           stroke: 4.5),
                     ),
                     const SizedBox(height: 2),
-                    const BlockText('Rare drop for beating the boss pace!',
+                    const BlockText('Rare drop for hitting the target pace!',
                         size: 10, stroke: 2.5, align: TextAlign.center),
                   ],
                 ),
@@ -650,6 +753,21 @@ class SessionSummarySheet extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _ghostResultRow(GhostResult r) {
+    final secs = r.paceDelta.abs().round();
+    final text = r.won
+        ? '\u{1F47B} GHOST BEATEN! $secs s/km faster  +${GhostResult.winGems} \u{1F48E}'
+        : '\u{1F47B} Ghost won this time \u2014 $secs s/km to find. Go again!';
+    return Block(
+      color: r.won ? const Color(0xFF1E6B45) : const Color(0xFF5B3A9E),
+      edge: r.won ? const Color(0xFF0B2E1D) : const Color(0xFF2A1A52),
+      depth: 4,
+      radius: 10,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      child: BlockText(text, size: 11, stroke: 3, align: TextAlign.center),
     );
   }
 

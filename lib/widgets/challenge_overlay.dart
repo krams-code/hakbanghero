@@ -149,7 +149,7 @@ class _ChallengeOverlayState extends State<ChallengeOverlay>
 
 String _title(ChallengeKind k) => k == ChallengeKind.sprintBlitz
     ? '⚠️ SUDDEN QUEST: SPRINT BLITZ!'
-    : '⏱️ TIME TRIAL: CHASE THE BOSS!';
+    : '⏱️ TIME TRIAL: PACE KEEPER!';
 
 String _target(ChallengeEngine e) {
   final c = e.config;
@@ -279,7 +279,7 @@ class _Hud extends StatelessWidget {
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: BlockText(
-                    sprint ? '⚡ SPRINT BLITZ' : '⏱️ CHASE THE BOSS',
+                    sprint ? '⚡ SPRINT BLITZ' : '⏱️ PACE KEEPER',
                     size: 14,
                     stroke: 3.5,
                     color: _yellow,

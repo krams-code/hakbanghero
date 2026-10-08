@@ -1,0 +1,144 @@
+// ─────────────────────────────────────────────────────────────────────────
+// HakbangHero — Firestore rules for FRIENDS / DUELS / CHAT (Round 2)
+//
+// HOW TO USE: open Firebase Console -> Firestore Database -> Rules.
+// Do NOT blindly replace your rules. Keep what you already have for `users`
+// (the leaderboard needs every signed-in player to be able to READ users) and
+// ADD the new `match` blocks below. If your current rules are the open
+// "test mode" ones, replace them with this whole file.
+//
+// No composite indexes are needed: every query is a single filter.
+// Security model: this is a student/capstone app, so rewards are granted by
+// the client. These rules stop the obvious abuse (reading other people's chats,
+// messaging non-friends, editing a friend's progress) but cannot stop a
+// player editing their OWN gems. Cloud Functions would be the next step.
+// ─────────────────────────────────────────────────────────────────────────
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isMe(uid)  { return signedIn() && request.auth.uid == uid; }
+
+    // ── users (merge with your existing rules) ──
+    match /users/{uid} {
+      allow read: if signedIn();                 // leaderboard + friend profiles
+      allow create, update, delete: if isMe(uid);
+
+      match /activities/{id} {
+        allow read, write: if isMe(uid);
+      }
+
+      // Friendship is stored on BOTH players. The accepting player may write
+      // the other side only while a pending request from them exists.
+      match /friends/{fid} {
+        allow read: if isMe(uid);
+        allow create: if isMe(uid)
+          || (isMe(fid)
+              && exists(/databases/$(database)/documents/friend_requests/$(uid + '_' + fid))
+              && get(/databases/$(database)/documents/friend_requests/$(uid + '_' + fid)).data.status == 'pending');
+        allow update: if isMe(uid);
+        allow delete: if isMe(uid) || isMe(fid);   // unfriend removes both sides
+      }
+    }
+
+    // ── friend codes: lookup only, never listable ──
+    match /friend_codes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // ── friend requests: doc id = "{fromUid}_{toUid}" ──
+    match /friend_requests/{rid} {
+      allow get: if signedIn()
+        && (resource == null
+            || resource.data.from == request.auth.uid
+            || resource.data.to == request.auth.uid);
+      allow list: if signedIn() && resource.data.to == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && rid == request.auth.uid + '_' + request.resource.data.to;
+      allow update: if signedIn()
+        && (resource.data.to == request.auth.uid                 // accept
+            || (resource.data.from == request.auth.uid           // re-send after unfriend
+                && request.resource.data.from == request.auth.uid
+                && request.resource.data.status == 'pending'));
+      allow delete: if signedIn()
+        && (resource.data.to == request.auth.uid || resource.data.from == request.auth.uid);
+    }
+
+    // ── LIVE friend duels ──
+    // Each player may only ever write THEIR OWN entry in progress / ready /
+    // seen / flags, only name themselves as winner, and can only finish the
+    // race (status "done") once their own progress has reached the distance
+    // (or the opponent forfeited, which sets by_default).
+    function ownKeyOnly(field) {
+      return request.resource.data.get(field, {})
+        .diff(resource.data.get(field, {}))
+        .affectedKeys().hasOnly([request.auth.uid]);
+    }
+
+    match /challenges/{cid} {
+      allow read: if signedIn() && request.auth.uid in resource.data.participants;
+      allow create: if signedIn()
+        && request.resource.data.from == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants;
+      allow update: if signedIn()
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.distance_km == resource.data.distance_km
+        && request.resource.data.reward == resource.data.reward
+        && ownKeyOnly('progress')
+        && ownKeyOnly('ready')
+        && ownKeyOnly('seen')
+        && ownKeyOnly('flags')
+        && request.resource.data.get('winner', request.auth.uid) == request.auth.uid
+        && (request.resource.data.status != 'done'
+            || request.resource.data.get('by_default', false) == true
+            || request.resource.data.progress[request.auth.uid] >= request.resource.data.distance_km);
+      allow delete: if false;
+    }
+
+    // ── reports (write-only for players; review them in the Firebase console) ──
+    match /reports/{rid} {
+      allow create: if signedIn()
+        && request.resource.data.reporter == request.auth.uid
+        && request.resource.data.reported != request.auth.uid;
+      allow read, update, delete: if false;
+    }
+
+    // ── private chat: doc id = "{smallerUid}_{largerUid}", friends only ──
+    function chatOther(chatId) {
+      return chatId.split('_')[0] == request.auth.uid
+        ? chatId.split('_')[1]
+        : chatId.split('_')[0];
+    }
+    function areFriends(chatId) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(chatOther(chatId)));
+    }
+
+    match /chats/{chatId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create, update: if signedIn()
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members.size() == 2
+        && areFriends(chatId);
+      allow delete: if false;
+
+      match /messages/{mid} {
+        allow read: if signedIn() && areFriends(chatId);
+        allow create: if signedIn()
+          && areFriends(chatId)
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 300;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

@@ -8,6 +8,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:hakbanghero/models/activity_model.dart';
 import 'package:hakbanghero/models/daily_quest_definitions.dart';
+import 'package:hakbanghero/models/ghost_run.dart';
+import '../services/friends_service.dart';
 
 import '../challenges/challenge_audio.dart';
 import '../challenges/challenge_engine.dart';
@@ -88,9 +90,23 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   final ChallengeEngine _challenge = ChallengeEngine();
   List<ChallengeRecord> _summaryChallenges = [];
 
+  // ── Ghost race (your own best run) ────────────────────────────────────────
+  GhostRun? _ghost;          // personal best, loaded for the pre-run screen
+  bool _ghostOn = true;      // player's opt-in
+  GhostRun? _raceGhost;      // the ghost locked in when this run started
+  GhostResult? _summaryGhost;
+
+  Future<void> _loadGhost() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final g = await GhostRun.loadBest(uid);
+    if (mounted) setState(() => _ghost = g);
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadGhost();
 
     _challenge.onEvent = (e) => ChallengeAudio.instance.onEvent(e);
 
@@ -216,57 +232,134 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
   // ── Permissions ────────────────────────────────────────────────────────────
 
+  /// Why the last permission check failed: 'service' | 'denied' | 'forever'.
+  String? _permIssue;
+
   Future<bool> _requestPermission() async {
-    final serviceEnabled =
-        await Geolocator.isLocationServiceEnabled();
-
-    if (!serviceEnabled) {
-      if (mounted) {
-        _showSnack(
-          'Please enable GPS/Location services on your device.',
-        );
-      }
-
-      return false;
-    }
-
-    LocationPermission permission =
-        await Geolocator.checkPermission();
-
-    if (permission == LocationPermission.denied) {
-      permission =
-          await Geolocator.requestPermission();
-
-      if (permission == LocationPermission.denied) {
-        if (mounted) {
-          _showSnack('Location permission denied.');
-        }
-
+    _permIssue = null;
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        _permIssue = 'service';
         return false;
       }
-    }
 
-    if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
-        _showSnack(
-          'Location permission permanently denied. '
-          'Enable it in settings.',
-        );
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
       }
-
+      if (permission == LocationPermission.deniedForever) {
+        _permIssue = 'forever';
+        return false;
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.unableToDetermine) {
+        _permIssue = 'denied'; // prompt dismissed (X) or refused
+        return false;
+      }
+      return true;
+    } catch (_) {
+      _permIssue = 'denied';
       return false;
     }
+  }
 
-    return true;
+  /// Location is unavailable. Never leave the player stuck: ask what to do.
+  Future<void> _onLocationBlocked() async {
+    if (!mounted) return;
+    final forever = _permIssue == 'forever';
+    final msg = _permIssue == 'service'
+        ? 'Location services are turned off on this device.'
+        : forever
+            ? 'Location permission is blocked. Enable it in your '
+                'device / browser settings.'
+            : 'Location permission was not granted.';
+
+    Widget btn(String label, Color c, Color e, String result,
+            {VoidCallback? onTap}) =>
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: PressBlock(
+            color: c,
+            edge: e,
+            depth: 5,
+            radius: 12,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            onTap: onTap ?? () => Navigator.of(context).pop(result),
+            child: SizedBox(
+              width: double.infinity,
+              child: Center(child: BlockText(label, size: 14, stroke: 3.5)),
+            ),
+          ),
+        );
+
+    final choice = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(20),
+        child: Block(
+          color: Rb.slate,
+          edge: Rb.slateEdge,
+          depth: 6,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const BlockText('LOCATION NEEDED',
+                  size: 18, stroke: 4, align: TextAlign.center),
+              const SizedBox(height: 8),
+              Text(
+                '$msg\n\nGPS tracks your distance. You can still run '
+                'with the timer only.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFFD7DADD),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 6),
+              btn('RUN WITHOUT GPS', Rb.green, Rb.greenEdge, 'nogps'),
+              btn('TRY AGAIN', Rb.blue, Rb.blueEdge, 'retry'),
+              if (forever)
+                btn('OPEN SETTINGS', Rb.gold, Rb.goldEdge, 'settings',
+                    onTap: () {
+                  Geolocator.openAppSettings(); // no-op on web
+                }),
+              btn('BACK', const Color(0xFF6B7078), const Color(0xFF1B1D20),
+                  'back'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+    switch (choice) {
+      case 'nogps':
+        await _startTracking(useGps: false);
+        break;
+      case 'retry':
+        await _startTracking();
+        break;
+      default:
+        setState(() => _phase = _Phase.preRun);
+    }
   }
 
   // ── START TRACKING ─────────────────────────────────────────────────────────
 
-  Future<void> _startTracking() async {
-    final granted = await _requestPermission();
-
-    if (!granted) {
-      return;
+  Future<void> _startTracking({bool useGps = true}) async {
+    if (useGps) {
+      final granted = await _requestPermission();
+      if (!mounted) return;
+      if (!granted) {
+        await _onLocationBlocked();
+        return;
+      }
     }
 
     _positionSub?.cancel();
@@ -291,6 +384,8 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
       _newlyCompletedQuests = [];
       _summaryChallenges = [];
+      _raceGhost = _ghostOn ? _ghost : null;
+      _summaryGhost = null;
     });
 
     _challenge.reset();
@@ -306,6 +401,8 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         }
       },
     );
+
+    if (!useGps) return; // timer-only run
 
     const locationSettings = LocationSettings(
       accuracy: LocationAccuracy.bestForNavigation,
@@ -357,6 +454,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
         _lastPosition = pos;
       },
+      onError: (Object _) {
+        if (mounted) _showSnack('GPS signal lost. The timer keeps running.');
+      },
     );
   }
 
@@ -398,6 +498,12 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     final bonusGems = _challenge.bonusGems;
     final lootChests = _challenge.lootChests;
     _summaryChallenges = challengeRecords;
+
+    // Ghost race result (null when not racing or the run was too short).
+    final ghostResult =
+        GhostResult.judge(_raceGhost, _distanceKm, _elapsedSeconds);
+    _summaryGhost = ghostResult;
+    final ghostGems = ghostResult?.won == true ? GhostResult.winGems : 0;
 
     // Determine final activity type by majority vote of speed samples.
     ActivityType finalType = _userPick;
@@ -493,6 +599,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
           if (challengeRecords.isNotEmpty)
             'challenges':
                 challengeRecords.map((r) => r.toMap()).toList(),
+          if (ghostResult != null) 'ghost': ghostResult.toMap(),
         });
 
         // 2. Update user totals.
@@ -508,8 +615,8 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
           'coins':
               FieldValue.increment(coins),
           // Sudden-quest bonuses (Mana Crystals are the `gems` field).
-          if (bonusGems > 0)
-            'gems': FieldValue.increment(bonusGems),
+          if (bonusGems + ghostGems > 0)
+            'gems': FieldValue.increment(bonusGems + ghostGems),
           if (lootChests > 0)
             'loot_chests': FieldValue.increment(lootChests),
         });
@@ -595,6 +702,11 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
                   todayStr,
               'daily_quests_claimed':
                   claimedMap,
+              // feeds "friends this week" on the RUN tab
+              ...FriendsService.weekFields(
+                data,
+                session.distanceKm,
+              ),
             };
 
             if (crystalsToAdd > 0) {
@@ -653,6 +765,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         completedQuests:
             _newlyCompletedQuests,
         challenges: _summaryChallenges,
+        ghostResult: _summaryGhost,
         onDone: _onSummaryDone,
       ),
     );
@@ -707,6 +820,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         _routePoints.clear();
       });
       _challenge.reset();
+      _loadGhost(); // a new personal best becomes the next ghost
     }
   }
 
@@ -774,6 +888,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       },
       onBack: _exitRunScreen,
       onStart: _startWarmUp,
+      ghost: _ghost,
+      ghostOn: _ghostOn,
+      onGhostToggle: () => setState(() => _ghostOn = !_ghostOn),
     );
   }
 
@@ -792,6 +909,8 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       onPause: _togglePause,
       onFinish: _confirmStop,
       challenge: _challenge,
+      ghost: _raceGhost,
+      elapsedSeconds: _elapsedSeconds,
     );
   }
 

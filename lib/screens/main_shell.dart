@@ -8,7 +8,6 @@ import 'profile/profile_screen.dart';
 
 import 'package:hakbanghero/screens/character/equipment_screen.dart';
 import 'package:hakbanghero/screens/shop/avatar_shop_screen.dart';
-import 'package:hakbanghero/screens/bosses/boss_map_screen.dart';
 import 'package:hakbanghero/run/run_tracking_screen.dart';
 
 import '../state/evolution_state.dart';
@@ -124,29 +123,6 @@ class _MainShellState extends State<MainShell> {
                 children: [
                   IndexedStack(index: _currentIndex, children: _screens),
 
-          // Boss Map block button — RUN tab only, never mid-run.
-          if (_currentIndex == 2 && !_isTrackingActive)
-            Positioned(
-              right: 12,
-              bottom: 16,
-              child: PressBlock(
-                color: Rb.gold,
-                edge: Rb.goldEdge,
-                depth: 5,
-                radius: 12,
-                padding: EdgeInsets.zero,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BossMapScreen()),
-                ),
-                child: const SizedBox(
-                  width: 52,
-                  height: 52,
-                  child: Center(
-                    child: Text('🗺️', style: TextStyle(fontSize: 26)),
-                  ),
-                ),
-              ),
-            ),
                 ],
               ),
             ),

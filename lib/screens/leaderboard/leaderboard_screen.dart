@@ -5,6 +5,8 @@ import '../../constants/app_icons.dart';
 import '../../widgets/block_ui.dart';
 import '../../widgets/pixel_icon.dart';
 import '../../widgets/hero_sprite.dart';
+import '../../services/friends_service.dart';
+import '../friends/friends_screen.dart';
 
 class LeaderboardScreen extends StatefulWidget {
   const LeaderboardScreen({super.key});
@@ -102,19 +104,72 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       depth: 6,
       gloss: true,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: const SizedBox(
-        width: double.infinity,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: IconLabel(
-            iconPath: AppIcons.ranksTrophy,
-            iconSize: 32,
-            gap: 8,
-            label: BlockText('LEADERBOARD', size: 22, stroke: 5),
+      child: Row(
+        children: [
+          const Expanded(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: IconLabel(
+                iconPath: AppIcons.ranksTrophy,
+                iconSize: 32,
+                gap: 8,
+                label: BlockText('LEADERBOARD', size: 22, stroke: 5),
+              ),
+            ),
           ),
-        ),
+          const SizedBox(width: 8),
+          _friendsButton(),
+        ],
       ),
+    );
+  }
+
+  /// Opens the Friends hub; shows a red dot while friend requests wait.
+  Widget _friendsButton() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: uid == null
+          ? null
+          : FriendsService.requests.where('to', isEqualTo: uid).snapshots(),
+      builder: (context, snap) {
+        final pending = snap.data?.docs
+                .where((d) => d.data()['status'] == 'pending')
+                .length ??
+            0;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            PressBlock(
+              color: Rb.blue,
+              edge: Rb.blueEdge,
+              depth: 4,
+              radius: 12,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const FriendsScreen()),
+              ),
+              child: const BlockText('\u{1F465} FRIENDS', size: 12, stroke: 3.5),
+            ),
+            if (pending > 0)
+              Positioned(
+                right: -5,
+                top: -5,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Rb.red,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.black, width: 2),
+                  ),
+                  child: Text('$pending',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 

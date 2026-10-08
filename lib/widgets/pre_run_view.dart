@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/activity_model.dart';
+import '../models/ghost_run.dart';
+import 'weekly_goal_card.dart';
+import 'friends_week_card.dart';
 import 'avatar_layer_stack.dart' show kSpriteWidth, kSpriteHeight;
 import 'avatar_preview.dart';
 import '../constants/app_icons.dart';
@@ -87,12 +90,20 @@ class PreRunView extends StatelessWidget {
   final VoidCallback onBack;
   final VoidCallback onStart;
 
+  /// Ghost race: the player's own fastest run. Null = none recorded yet.
+  final GhostRun? ghost;
+  final bool ghostOn;
+  final VoidCallback? onGhostToggle;
+
   const PreRunView({
     super.key,
     required this.selected,
     required this.onSelect,
     required this.onBack,
     required this.onStart,
+    this.ghost,
+    this.ghostOn = false,
+    this.onGhostToggle,
   });
 
   @override
@@ -150,6 +161,12 @@ class PreRunView extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 14),
+                        const WeeklyGoalCard(),
+                        const SizedBox(height: 12),
+                        _buildGhostCard(),
+                        const SizedBox(height: 12),
+                        const FriendsWeekCard(),
+                        const SizedBox(height: 14),
                         _buildUnlockSlot(next, remaining, cleared),
                       ],
                     ),
@@ -161,6 +178,69 @@ class PreRunView extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  // ───────────── ghost race opt-in ─────────────
+
+  Widget _buildGhostCard() {
+    final g = ghost;
+    if (g == null) {
+      return Block(
+        color: _panel,
+        edge: _panelEdge,
+        depth: 5,
+        radius: 16,
+        padding: const EdgeInsets.all(12),
+        child: const Row(
+          children: [
+            Text('\u{1F47B}', style: TextStyle(fontSize: 26)),
+            SizedBox(width: 10),
+            Expanded(
+              child: BlockText(
+                'GHOST RACE unlocks after your first run of 0.5 km+. You will race your own best!',
+                size: 11,
+                stroke: 3,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return PressBlock(
+      color: ghostOn ? const Color(0xFF5B3A9E) : _panel,
+      edge: ghostOn ? const Color(0xFF2A1A52) : _panelEdge,
+      depth: 5,
+      radius: 16,
+      padding: const EdgeInsets.all(12),
+      onTap: onGhostToggle,
+      child: Row(
+        children: [
+          const Text('\u{1F47B}', style: TextStyle(fontSize: 26)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const BlockText('RACE YOUR GHOST', size: 13, stroke: 3.5),
+                const SizedBox(height: 2),
+                BlockText(g.label, size: 10, stroke: 2.5,
+                    color: const Color(0xFFD7C8FF)),
+                const BlockText('Beat it for +${GhostResult.winGems} \u{1F48E}',
+                    size: 9.5, stroke: 2.5, color: Color(0xFFFFD21F)),
+              ],
+            ),
+          ),
+          Block(
+            color: ghostOn ? _green : const Color(0xFF6B7078),
+            edge: ghostOn ? _greenEdge : const Color(0xFF1B1D20),
+            depth: 3,
+            radius: 10,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            child: BlockText(ghostOn ? 'ON' : 'OFF', size: 12, stroke: 3),
+          ),
+        ],
+      ),
     );
   }
 
