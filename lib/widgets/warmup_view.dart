@@ -6,7 +6,6 @@ import '../models/warmup_exercise.dart';
 import 'block_ui.dart';
 import 'demo_window.dart';
 import 'pixel_icon.dart';
-import 'warmup_stage.dart';
 
 const _yellow = Color(0xFFFFD21F);
 const _yellowEdge = Color(0xFF8A6D00);
@@ -52,8 +51,9 @@ class _WarmUpViewState extends State<WarmUpView>
     with SingleTickerProviderStateMixin {
   late final AnimationController _stepCtrl; // 0 → 1 over one step
   late List<WarmUpEntry> _queue; // randomized exercises for THIS visit
+  final Set<int> _skipped = {}; // slots the player removed before starting
+  List<WarmUpEntry> _routine = const []; // what actually runs
   bool _started = false;
-  bool _done = false;
   int _index = 0;
 
   @override
@@ -82,8 +82,12 @@ class _WarmUpViewState extends State<WarmUpView>
   // ── sequence engine ───────────────────────────────────────────────────
 
   void _startRoutine() {
-    if (_queue.isEmpty) {
-      _finish();
+    _routine = [
+      for (var i = 0; i < _queue.length; i++)
+        if (!_skipped.contains(i)) _queue[i],
+    ];
+    if (_routine.isEmpty) {
+      _skip(); // every exercise was skipped -> straight to the run
       return;
     }
     setState(() {
@@ -94,25 +98,34 @@ class _WarmUpViewState extends State<WarmUpView>
   }
 
   void _onStepStatus(AnimationStatus st) {
-    if (st != AnimationStatus.completed || !mounted || _done) return;
-    if (_index < _queue.length - 1) {
-      setState(() => _index++); // slides the text out/in, bar resets below
+    if (st != AnimationStatus.completed || !mounted) return;
+    _nextExercise();
+  }
+
+  /// Move to the next exercise (timer ran out, or the player skipped this
+  /// one). After the last exercise the routine ends and the run begins.
+  void _nextExercise() {
+    if (_index < _routine.length - 1) {
+      setState(() => _index++); // slides the text out/in, bar resets
       _stepCtrl.forward(from: 0);
     } else {
       _finish();
     }
   }
 
+  void _skipExercise() {
+    _stepCtrl.stop();
+    _nextExercise();
+  }
+
+  /// The run screen may refuse to continue (e.g. location denied) and then
+  /// shows its own prompt, so these never lock the screen for good.
   void _finish() {
-    if (_done) return;
-    _done = true;
     _stepCtrl.stop();
     widget.onComplete(); // → Active Tracking stage
   }
 
   void _skip() {
-    if (_done) return;
-    _done = true;
     _stepCtrl.stop();
     widget.onSkip();
   }
@@ -174,7 +187,7 @@ class _WarmUpViewState extends State<WarmUpView>
 
   // ── Idle: randomized quest list + big buttons ─────────────────────────
   Widget _preview() {
-    final total = _queue.length * widget.stepSeconds;
+    final total = (_queue.length - _skipped.length) * widget.stepSeconds;
     return Column(
       children: [
         Block(
@@ -193,7 +206,7 @@ class _WarmUpViewState extends State<WarmUpView>
                 Padding(
                   padding:
                       EdgeInsets.only(bottom: i == _queue.length - 1 ? 0 : 10),
-                  child: _stepRow(i + 1, _queue[i]),
+                  child: _stepRow(i, _queue[i]),
                 ),
               const SizedBox(height: 12),
               BlockText('ABOUT $total SECONDS',
@@ -237,8 +250,12 @@ class _WarmUpViewState extends State<WarmUpView>
     );
   }
 
-  Widget _stepRow(int n, WarmUpEntry e) {
-    return Block(
+  Widget _stepRow(int i, WarmUpEntry e) {
+    final n = i + 1;
+    final off = _skipped.contains(i);
+    return Opacity(
+      opacity: off ? 0.45 : 1,
+      child: Block(
       color: Rb.slot,
       edge: Rb.panelEdge,
       depth: 4,
@@ -261,23 +278,43 @@ class _WarmUpViewState extends State<WarmUpView>
           PixelIcon(e.exercise.iconPath, size: 28),
           const SizedBox(width: 10),
           Expanded(
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: Alignment.centerLeft,
-              child: BlockText(e.exercise.name.toUpperCase(),
-                  size: 15, stroke: 3.5),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: BlockText(e.exercise.name.toUpperCase(),
+                      size: 15, stroke: 3.5),
+                ),
+                const SizedBox(height: 6),
+                PressBlock(
+                  color: off ? Rb.green : const Color(0xFF6B7078),
+                  edge: off ? Rb.greenEdge : const Color(0xFF1B1D20),
+                  depth: 3,
+                  radius: 8,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  onTap: () => setState(() {
+                    if (!_skipped.add(i)) _skipped.remove(i);
+                  }),
+                  child: BlockText(off ? 'UNDO' : 'SKIP',
+                      size: 10, stroke: 3),
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 8),
           DemoWindow(path: e.exercise.demoPath, size: 64),
         ],
       ),
+    ),
     );
   }
 
   // ── Running: the animated mini-game phase ─────────────────────────────
   Widget _active() {
-    final entry = _queue[_index];
+    final entry = _routine[_index];
 
     return Column(
       children: [
@@ -296,7 +333,7 @@ class _WarmUpViewState extends State<WarmUpView>
                     alignment: Alignment.center,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: BlockText('STEP ${_index + 1}/${_queue.length}',
+                      child: BlockText('STEP ${_index + 1}/${_routine.length}',
                           size: 30, stroke: 6),
                     ),
                   ),
@@ -328,18 +365,14 @@ class _WarmUpViewState extends State<WarmUpView>
         ),
         const SizedBox(height: 18),
 
-        // animated viewport (scenic stage + avatar + demo PiP)
+        // the exercise demo GIF, nothing else
         LayoutBuilder(builder: (context, c) {
-          final side = c.maxWidth.clamp(0.0, 420.0).toDouble();
-          return SizedBox(
-            width: side,
-            height: side * 0.92,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: WarmUpStage(demoPath: entry.exercise.demoPath),
-                ),
-              ],
+          final side = c.maxWidth.clamp(0.0, 360.0).toDouble();
+          return Center(
+            child: DemoWindow(
+              key: ValueKey(entry.exercise.id),
+              path: entry.exercise.demoPath,
+              size: side,
             ),
           );
         }),
@@ -369,7 +402,17 @@ class _WarmUpViewState extends State<WarmUpView>
           ),
         ),
         const SizedBox(height: 22),
-        _SlateButton(label: 'SKIP WARM-UP', onTap: _skip),
+        Row(
+          children: [
+            Expanded(
+              child: _SlateButton(label: 'SKIP EXERCISE', onTap: _skipExercise),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _SlateButton(label: 'SKIP WARM-UP', onTap: _skip),
+            ),
+          ],
+        ),
       ],
     );
   }

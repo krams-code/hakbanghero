@@ -51,7 +51,8 @@ class _FriendsWeekCardState extends State<FriendsWeekCard> {
         try {
           final d = (await FriendsService.user(uid).get()).data();
           if (d == null) return;
-          final km = d['week_key'] == key ? ((d['week_km'] as num?)?.toDouble() ?? 0) : 0.0;
+          final double km =
+              d['week_key'] == key ? ((d['week_km'] as num?)?.toDouble() ?? 0.0) : 0.0;
           final last = (d['last_run_at'] as Timestamp?)?.toDate();
           final ranToday = last != null &&
               last.year == today.year &&

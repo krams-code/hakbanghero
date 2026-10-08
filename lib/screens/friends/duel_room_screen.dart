@@ -95,10 +95,17 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
     return p.firstWhere((u) => u != _me, orElse: () => '');
   }
 
+  bool get _iAmSender => _ch != null && _ch!['from'] == _me;
+
+  String _nameField(String key, String fallback) {
+    final v = _ch == null ? null : _ch![key];
+    return v is String && v.isNotEmpty ? v : fallback;
+  }
+
   String get _otherName =>
-      ((_ch?['from'] == _me ? _ch?['to_name'] : _ch?['from_name']) as String?) ?? 'Hero';
+      _iAmSender ? _nameField('to_name', 'Hero') : _nameField('from_name', 'Hero');
   String get _myName =>
-      ((_ch?['from'] == _me ? _ch?['from_name'] : _ch?['to_name']) as String?) ?? 'You';
+      _iAmSender ? _nameField('from_name', 'You') : _nameField('to_name', 'You');
 
   double _progressOf(String uid) =>
       (((_ch?['progress'] as Map?)?[uid]) as num?)?.toDouble() ?? 0;
@@ -234,7 +241,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
     _raceStart = DateTime.now();
     final started = (_ch?['started_at'] as Timestamp?)?.toDate();
     _secs = resume && started != null
-        ? DateTime.now().difference(started).inSeconds.clamp(0, 86400)
+        ? DateTime.now().difference(started).inSeconds.clamp(0, 86400).toInt()
         : 0;
     _last = null;
 
@@ -967,7 +974,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
                     ? '\u{1F3C6} YOU WON — run as far as you like, then save.'
                     : targetReached
                         ? '\u{1F389} You finished ${_target.toStringAsFixed(0)} km too! Save your run.'
-                        : '\u{1F3C3} $_otherName won — keep going, ${(_target - _km).clamp(0, 99).toStringAsFixed(2)} km to your goal!',
+                        : '\u{1F3C3} $_otherName won — keep going, ${(_target - _km).clamp(0.0, 99.0).toStringAsFixed(2)} km to your goal!',
                 size: 11.5,
                 stroke: 3,
                 align: TextAlign.center,
