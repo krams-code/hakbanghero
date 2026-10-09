@@ -197,7 +197,12 @@ class _LiveTrackerAnimationState extends State<LiveTrackerAnimation>
     // 3) parallax scroll: px/s = speed(km/h) * scrollPxPerKmh, eased so the
     //    scenery accelerates / brakes smoothly with the runner.
     final secs = dt.inMicroseconds / 1e6;
-    final target = _speed * widget.scrollPxPerKmh;
+    // Non-linear: a stroll crawls, a full run (11+ km/h) makes the world fly.
+    // (Boost mode keeps its own fixed sprint speed.)
+    final curve = _boosting
+        ? 1.0
+        : 1.0 + ((_speed - 5.0) / 10.0).clamp(0.0, 1.2).toDouble();
+    final target = _speed * widget.scrollPxPerKmh * curve;
     _pxPerSec += (target - _pxPerSec) * math.min(1.0, secs * 6);
     if (_pxPerSec < 0.5 && target == 0) _pxPerSec = 0;
     if (_pxPerSec > 0) _scroll.value += _pxPerSec * secs;
