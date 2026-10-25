@@ -54,7 +54,9 @@ class BlockNavBar extends StatelessWidget {
             forcePressed: selected,
             padding: EdgeInsets.zero,
             onTap: () => onTap(item.$1),
+            // full button width, so the icon + label sit in the middle
             child: SizedBox(
+              width: double.infinity,
               height: 50,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,

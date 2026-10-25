@@ -166,7 +166,7 @@ service cloud.firestore {
 
     // Daily coin cap for runs/duels: the app keeps coins_today (+ the day
     // number, Manila time) and the rules make that counter honest.
-    function coinDay() { return math.floor((request.time.toMillis() + 28800000) / 86400000); }
+    function coinDay() { return math.floor(float(request.time.toMillis() + 28800000) / 86400000.0); }
     function dailyCoinsOk() {
       return delta('coins') == 0
         || (nd('coins_today_day', -1) == coinDay()
@@ -208,9 +208,10 @@ service cloud.firestore {
         && a.durationSeconds <= stageTarget(a.mode)[1] + 2;
     }
 
+    // (runOk itself is enforced by economyOk whenever a run is committed)
     function stageOk(uid) {
       return !changed('stage_records')
-        || (runOk(uid)
+        || (runChange() && runCommit()
             && stageProof(getAfter(actPath(uid, nd('last_run_id', ''))).data));
     }
 
@@ -290,18 +291,27 @@ service cloud.firestore {
     }
 
     // ── put it together ──
+    // xp / km / runs / chests only ever go up through a run commit.
+    function runChange() {
+      return delta('xp') > 0 || delta('total_km') > 0
+        || delta('total_sessions') > 0 || delta('loot_chests') > 0;
+    }
+
     function economyOk(uid) {
       return
         checkInOk() &&
-        // coins can always be SPENT, but only a run / duel / claim adds them
-        (delta('coins') <= 0 || runOk(uid) || duelWinOk(uid)
-            || streakOk() || weeklyOk() || migrateOk())
+        // A run is verified ONCE (its coins are checked inside runOk).
+        // Rules may only make ~10 document lookups per write: checking the
+        // run separately for coins, xp, km and runs went over that limit and
+        // every real run was refused with permission-denied.
+        // Without a run, coins can always be SPENT, but only a duel / claim
+        // adds them.
+        (runChange()
+            ? runOk(uid)
+            : (delta('coins') <= 0 || duelWinOk(uid)
+                || streakOk() || weeklyOk() || migrateOk()))
         // crystals no longer exist: the old balance can only be cashed in
         && delta('gems') <= 0
-        && (delta('xp') <= 0 || runOk(uid))
-        && (delta('total_km') <= 0 || runOk(uid))
-        && (delta('total_sessions') <= 0 || runOk(uid))
-        && (delta('loot_chests') <= 0 || runOk(uid))
         && nd('coins', 0) >= 0
         // nobody lowers their own totals to dodge checks
         && delta('xp') >= 0 && delta('total_km') >= 0 && delta('total_sessions') >= 0
@@ -368,6 +378,15 @@ service cloud.firestore {
         allow create: if isMe(uid) && activityOk(request.resource.data);
         allow update: if false;
         allow delete: if isMe(uid);
+      }
+
+      // Finished runs waiting to be counted. Uploaded the moment a run ends
+      // (works on any device / weak signal), then counted by the normal,
+      // fully checked run save and deleted. Gives no rewards by itself.
+      match /pending_runs/{id} {
+        allow read, delete: if isMe(uid);
+        allow create: if isMe(uid) && request.resource.data.uid == uid;
+        allow update: if false;
       }
 
 __FRIENDS_SUBTREE__

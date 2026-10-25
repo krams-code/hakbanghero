@@ -42,6 +42,20 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: LilitaOne
+      fonts:
+        - asset: assets/fonts/LilitaOne-Regular.ttf
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/Nunito-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Nunito-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Nunito-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/Nunito-Black.ttf
+          weight: 900
   assets:
     - assets/images/
     - assets/images/badges/
@@ -67,6 +81,10 @@ flutter:
     - assets/images/heroes/sprout/normal/
     - assets/images/heroes/sprout/overweight/
     - assets/images/heroes/sprout/obese/
+    - assets/images/heroes/sprout_girl/underweight/
+    - assets/images/heroes/sprout_girl/normal/
+    - assets/images/heroes/sprout_girl/overweight/
+    - assets/images/heroes/sprout_girl/obese/
     - assets/images/heroes/frog/
     - assets/images/heroes/penguin/
     - assets/images/heroes/slime/

@@ -517,6 +517,9 @@ class SessionSummarySheet extends StatelessWidget {
   /// True when the run could not be sent (offline) and waits on the phone.
   final bool queued;
 
+  /// Why the save failed (shown when [queued]).
+  final String? saveError;
+
   /// Interval Run results {rounds, fast_km, best_fast_pace_s?} (else null).
   final Map<String, dynamic>? intervalStats;
   final bool intervalNewBest;
@@ -553,6 +556,7 @@ class SessionSummarySheet extends StatelessWidget {
     required this.session,
     required this.isSaving,
     this.queued = false,
+    this.saveError,
     this.intervalStats,
     this.intervalNewBest = false,
     required this.completedQuests,
@@ -700,12 +704,31 @@ class SessionSummarySheet extends StatelessWidget {
                     radius: 10,
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 7),
-                    child: const BlockText(
-                        '\u{1F4E1} NO CONNECTION: run saved on your phone.\n'
-                        'It sends by itself when you are back online.',
-                        size: 10.5,
-                        stroke: 3,
-                        align: TextAlign.center),
+                    child: Column(
+                      children: [
+                        BlockText(
+                            (saveError ?? '').startsWith('timeout') ||
+                                    (saveError ?? '').startsWith('unavailable')
+                                ? '\u{1F4E1} NO CONNECTION: run kept on your phone.\n'
+                                    'It sends by itself when you are back online.'
+                                : '\u26A0\uFE0F RUN NOT SAVED YET: kept on your phone.\n'
+                                    'Tap the SYNC bar on the RUN screen to retry.',
+                            size: 10.5,
+                            stroke: 3,
+                            align: TextAlign.center),
+                        if (saveError != null) ...[
+                          const SizedBox(height: 4),
+                          SelectableText(
+                            'Reason: $saveError',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Color(0xFFFFD7CF),
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
                 if (unlockedRank != null) ...[

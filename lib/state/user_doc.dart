@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../models/character_profile.dart' show isFemaleGender;
+import '../models/hero_roster.dart' show HeroLook;
+
 /// ONE Firestore listener on `users/{uid}` for the whole app.
 ///
 /// Before, about eight widgets each opened their own `.snapshots()` and
@@ -32,7 +35,10 @@ class UserDoc {
     _sub = null;
     _last = null;
     _uid = uid;
-    if (uid == null) return;
+    if (uid == null) {
+      HeroLook.meGirl = false;
+      return;
+    }
     _sub = FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
@@ -40,6 +46,8 @@ class UserDoc {
         .listen(
       (s) {
         _last = s;
+        // girl / boy SPROUT art for this player, before anyone rebuilds
+        HeroLook.meGirl = isFemaleGender(s.data()?['gender'] as String?);
         _ctrl.add(s);
       },
       onError: _ctrl.addError,

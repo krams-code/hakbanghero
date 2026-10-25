@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -125,7 +127,25 @@ class RunSaveResult {
 /// at all. If it cannot finish (offline, slow network) the run goes into the
 /// on-phone outbox and is re-sent later by [RunOutbox.flush].
 abstract final class RunSaver {
-  static const Duration timeout = Duration(seconds: 12);
+  // Mobile data / Safari can be slow to open the first connection.
+  static const Duration timeout = Duration(seconds: 30);
+
+  /// Short, readable reason a save failed (shown on the summary / sync bar).
+  static String describe(Object e) {
+    if (e is TimeoutException) return 'timeout: no answer from the server';
+    if (e is FirebaseException) {
+      final msg = (e.message ?? '').replaceAll('\n', ' ');
+      return '${e.code}: ${msg.length > 140 ? '${msg.substring(0, 140)}...' : msg}';
+    }
+    final t = e.toString();
+    return t.length > 160 ? '${t.substring(0, 160)}...' : t;
+  }
+
+  /// True when the server answered "no" (rules / bad data), not just offline.
+  static bool isRejected(Object e) =>
+      e is FirebaseException &&
+      const {'permission-denied', 'invalid-argument', 'failed-precondition'}
+          .contains(e.code);
 
   static String todayString() {
     final n = DateTime.now();
@@ -290,17 +310,97 @@ abstract final class RunSaver {
   }
 }
 
+/// CLOUD COPY of finished runs: users/{uid}/pending_runs/{runId}.
+///
+/// The moment a run ends it is uploaded here (a plain write, so Firebase
+/// queues and retries it on weak signal, and it survives a reload). Any
+/// device signed in to the account then counts it with [RunSaver.save] and
+/// deletes the copy, so a run never depends on the phone it was recorded on.
+abstract final class RunCloud {
+  static CollectionReference<Map<String, dynamic>> _col(String uid) =>
+      FirebaseFirestore.instance.collection('users').doc(uid).collection('pending_runs');
+
+  /// Upload (fire and forget; Firebase keeps retrying offline).
+  static void stash(RunPayload p) {
+    _col(p.uid)
+        .doc(p.id)
+        .set({...p.toJson(), 'created_at': FieldValue.serverTimestamp()})
+        .catchError((Object e) => debugPrint('pending_runs upload: $e'));
+  }
+
+  /// The run was counted: remove its cloud copy.
+  static Future<void> done(String uid, String id) async {
+    try {
+      await _col(uid).doc(id).delete();
+    } catch (e) {
+      debugPrint('pending_runs delete: $e');
+    }
+  }
+
+  /// Ids of runs waiting in the cloud for [uid].
+  static Set<String> waitingIds = <String>{};
+
+  /// Count every waiting cloud run of [uid]. Returns how many went through.
+  static Future<int> flush(String uid) async {
+    var sent = 0;
+    QuerySnapshot<Map<String, dynamic>> snap;
+    try {
+      snap = await _col(uid).get().timeout(RunSaver.timeout);
+    } catch (e) {
+      debugPrint('pending_runs read: $e');
+      return 0;
+    }
+    final docs = [...snap.docs]..sort((a, b) => a.id.compareTo(b.id));
+    final left = <String>{};
+    for (final d in docs) {
+      try {
+        final p = RunPayload.fromJson(Map<String, dynamic>.from(d.data()));
+        if (p.uid != uid) continue;
+        await RunSaver.save(p).timeout(RunSaver.timeout);
+        await done(uid, d.id);
+        sent++;
+        RunOutbox.lastError.value = null;
+      } catch (e) {
+        debugPrint('pending_runs save: $e');
+        RunOutbox.lastError.value = RunSaver.describe(e);
+        left.add(d.id);
+      }
+    }
+    waitingIds = left;
+    return sent;
+  }
+}
+
 /// Runs that could not be saved yet. Lives in SharedPreferences, so it
 /// survives closing the app. Re-sent on the next app start / next run.
 abstract final class RunOutbox {
   static const _key = 'run_outbox_v1';
   static bool _flushing = false;
 
-  /// How many runs are waiting to be sent (drives the SYNC chip).
+  /// How many runs of the SIGNED-IN player are waiting (drives the SYNC chip).
   static final ValueNotifier<int> pending = ValueNotifier<int>(0);
 
+  /// Runs on this phone that belong to OTHER accounts (sent only when that
+  /// account signs in here).
+  static final ValueNotifier<int> pendingOther = ValueNotifier<int>(0);
+
+  static void _count(List<RunPayload> list) {
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    // same run can be both on the phone and in the cloud: count it once
+    final mine = {
+      for (final p in list)
+        if (p.uid == me) p.id,
+      ...RunCloud.waitingIds,
+    };
+    pending.value = mine.length;
+    pendingOther.value = list.where((p) => p.uid != me).length;
+  }
+
+  /// Why the last send failed (null after a successful send).
+  static final ValueNotifier<String?> lastError = ValueNotifier<String?>(null);
+
   static Future<void> refresh() async {
-    pending.value = (await _load()).length;
+    _count(await _load());
   }
 
   static Future<List<RunPayload>> _load() async {
@@ -326,7 +426,7 @@ abstract final class RunOutbox {
       final sp = await SharedPreferences.getInstance();
       await sp.setStringList(
           _key, [for (final p in list) jsonEncode(p.toJson())]);
-      pending.value = list.length;
+      _count(list);
     } catch (e) {
       debugPrint('RunOutbox store failed: $e');
     }
@@ -357,13 +457,19 @@ abstract final class RunOutbox {
         }
         try {
           await RunSaver.save(p).timeout(RunSaver.timeout);
+          await RunCloud.done(p.uid, p.id);
           sent++;
-        } catch (_) {
+          lastError.value = null;
+        } catch (e) {
+          debugPrint('RunOutbox send failed: $e');
+          lastError.value = RunSaver.describe(e);
           left.add(p);
         }
       }
       if (sent > 0) await _store(left);
-      pending.value = left.length;
+      // then runs waiting in the cloud (recorded on any device)
+      sent += await RunCloud.flush(uid);
+      _count(await _load());
     } finally {
       _flushing = false;
     }

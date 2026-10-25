@@ -57,6 +57,45 @@ class HeroDef {
 
 const String kDefaultHeroId = 'sprout';
 
+/// Girl SPROUT: same hero (same id, gear, saves), drawn with the art in
+/// assets/images/heroes/sprout_girl/ when the player's gender is female.
+const String kGirlSproutArt = 'sprout_girl';
+
+/// The signed-in player's look, set by UserDoc from users/{uid}.gender.
+/// Used when a widget is not told whose hero it is drawing.
+class HeroLook {
+  HeroLook._();
+  static bool meGirl = false;
+}
+
+/// 'male' | 'female' | null (not picked yet) from a stored gender value.
+/// Tolerant of case, spaces and older spellings ('Female', 'girl', 'F'...).
+String? genderKey(Object? gender) {
+  if (gender is! String) return null;
+  switch (gender.trim().toLowerCase()) {
+    case 'female':
+    case 'girl':
+    case 'woman':
+    case 'f':
+      return 'female';
+    case 'male':
+    case 'boy':
+    case 'man':
+    case 'm':
+      return 'male';
+  }
+  return null;
+}
+
+/// Name shown for a hero: SPROUT is "SPROUT GIRL" for girl players.
+String heroDisplayName(HeroDef h, {bool? girl}) =>
+    h.id == kDefaultHeroId && (girl ?? HeroLook.meGirl) ? 'SPROUT GIRL' : h.name;
+
+/// Art folder to draw [heroId] with. [girl] = that player's gender is
+/// female (null = the signed-in player's).
+String heroArtId(String heroId, {bool? girl}) =>
+    heroId == kDefaultHeroId && (girl ?? HeroLook.meGirl) ? kGirlSproutArt : heroId;
+
 // HOW HEROES ARE GOT (same ideas as Brawl Stars / Subway Surfers / Crossy Road:
 // a few free starters, cheap things you can buy in the first days, goals that
 // unlock by themselves, and one big trophy hero):

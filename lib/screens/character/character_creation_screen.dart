@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'hero_picker_screen.dart' show saveErrorText;
 import 'package:firebase_auth/firebase_auth.dart';
@@ -12,6 +14,7 @@ import '../../models/outfit_catalog.dart';
 import '../../models/tutorial_progress.dart';
 import '../main_shell.dart';
 import '../../widgets/emoji_icons.dart';
+import '../../state/user_doc.dart';
 
 class CharacterCreationScreen extends StatefulWidget {
   final bool isEditMode; // true when opened from Profile to tweak appearance
@@ -54,16 +57,69 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
     }
   }
 
-  Future<void> _loadGender() async {
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _genderSub;
+
+  /// Follows users/{uid}.gender live: right after sign-up the doc may still
+  /// be on its way, so a one-time read could miss the 'female' choice.
+  void _loadGender() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
-      final g = doc.data()?['gender'] as String?;
-      if (mounted && g != _gender) setState(() => _gender = g);
-    } catch (_) {
-      // keep the male default; never block hero creation on this
+    void apply(DocumentSnapshot<Map<String, dynamic>>? doc) {
+      final data = doc?.data();
+      if (data == null || !mounted) return;
+      final g = genderKey(data['gender']);
+      if (!_genderLoaded || (g != null && g != _gender && !_genderPickedHere)) {
+        setState(() {
+          _genderLoaded = true;
+          _genderSaved = g != null;
+          if (!_genderPickedHere) _gender = g;
+        });
+      }
     }
+    apply(UserDoc.instance.snapshotFor(uid));
+    _genderSub = UserDoc.instance.stream.listen(apply, onError: (_) {
+      // keep the male default; never block hero creation on this
+    });
+  }
+
+  /// Girl SPROUT art when the player picked FEMALE at sign-up.
+  bool get _girl => genderKey(_gender) == 'female';
+
+  /// The account doc has been read (so we know if a gender is saved).
+  bool _genderLoaded = false;
+
+  /// A gender is already saved (email sign-up asks for it).
+  bool _genderSaved = false;
+
+  /// Picked on this screen (Google sign-up never asks).
+  bool _genderPickedHere = false;
+
+  /// BOY / GIRL picker, shown only when the account has no gender yet.
+  Widget _genderPicker() {
+    Widget tile(String value, String label, Color c, Color e) {
+      final sel = _gender == value;
+      return Expanded(
+        child: PressBlock(
+          color: sel ? c : Rb.slot,
+          edge: sel ? e : Rb.slateEdge,
+          depth: 5,
+          radius: 14,
+          forcePressed: sel,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          onTap: () => setState(() {
+            _gender = value;
+            _genderPickedHere = true;
+          }),
+          child: Center(child: BlockText(label, size: 16, stroke: 4)),
+        ),
+      );
+    }
+
+    return Row(children: [
+      tile('male', '\u2642 BOY', Rb.blue, Rb.blueEdge),
+      const SizedBox(width: 10),
+      tile('female', '\u2640 GIRL', const Color(0xFFFF5FA2), const Color(0xFF8A1F55)),
+    ]);
   }
 
   Future<void> _loadExistingProfile() async {
@@ -99,6 +155,7 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
     _heightFtCtrl.dispose();
     _heightInCtrl.dispose();
     _weightCtrl.dispose();
+    _genderSub?.cancel();
     super.dispose();
   }
 
@@ -150,6 +207,11 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
       return;
     }
 
+    if (!widget.isEditMode && _genderLoaded && !_genderSaved && _gender == null) {
+      _snack('Pick BOY or GIRL first.');
+      return;
+    }
+
     setState(() => _saving = true);
 
     final profile = CharacterProfile(
@@ -179,6 +241,7 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
           ...StarterPack.toFirestore(),
           'hero_id': _heroId,
           'owned_heroes': FieldValue.arrayUnion([_heroId]),
+          if (_genderPickedHere && _gender != null) 'gender': _gender,
           'owned_items': FieldValue.arrayUnion(StarterPack.ownedItems),
           // ...and show the onboarding tutorial once
           'tutorial_done': false,
@@ -268,6 +331,14 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
                         _weightField(),
                       ]),
                     const SizedBox(height: 16),
+                    if (!widget.isEditMode && _genderLoaded && !_genderSaved) ...[
+                      _panel('\u{1F9D1} ARE YOU A BOY OR A GIRL?', [
+                        _label('YOUR HERO AND THE BOYS / GIRLS BOARD USE THIS'),
+                        const SizedBox(height: 8),
+                        _genderPicker(),
+                      ]),
+                      const SizedBox(height: 16),
+                    ],
                     if (!widget.isEditMode) ...[
                       _panel('🎭 CHOOSE YOUR COSTUME', [
                         _label('YOU CAN UNLOCK MORE COSTUMES LATER'),
@@ -309,7 +380,9 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
                       SizedBox(
                         height: 84,
                         child: HeroStill(
-                            heroId: h.id, tier: _previewProfile.bodyTier),
+                            heroId: h.id,
+                            tier: _previewProfile.bodyTier,
+                            girl: _girl),
                       ),
                       const SizedBox(height: 4),
                       BlockText(h.name, size: 11, stroke: 3),
@@ -409,6 +482,7 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
                       heroId: _heroId,
                       tier: p.bodyTier,
                       pose: RigPose.idle,
+                      girl: _girl,
                       height: 290,
                     ),
                   ),

@@ -116,7 +116,9 @@ class AvatarPreview extends StatelessWidget {
     final hero = heroId;
     if (hero != null) {
       Widget still(BodyTier t) =>
-          HeroStill(heroId: hero, tier: t, outfit: outfit, filterQuality: filterQuality == FilterQuality.none ? FilterQuality.medium : filterQuality);
+          HeroStill(heroId: hero, tier: t, outfit: outfit,
+              girl: genderKey(gender) == 'female',
+              filterQuality: filterQuality == FilterQuality.none ? FilterQuality.medium : filterQuality);
       if (owner == null) return still(_tier(bodySize));
       return ValueListenableBuilder<BodyCompositionState>(
         valueListenable: EvolutionState.instance.composition,

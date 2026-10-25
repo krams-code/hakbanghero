@@ -90,6 +90,9 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   String _tab = 'featured';
   String _query = '';
   final TextEditingController _searchCtl = TextEditingController();
+  // While searching on a phone, the preview panel is hidden so the search box
+  // sits at the top and the keyboard can't cover it.
+  final FocusNode _searchFocus = FocusNode();
   ActivitySnapshot _act = const ActivitySnapshot();
   bool _claiming = false;
   bool _buying = false;
@@ -102,6 +105,9 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   @override
   void initState() {
     super.initState();
+    _searchFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) {
       ActivitySnapshot.load(uid).then((a) {
@@ -113,6 +119,7 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
   @override
   void dispose() {
     _searchCtl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -329,7 +336,39 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     );
   }
 
+  // ── ONE ITEM AT A TIME ──
+  // The shop sells one thing per purchase. Owned gear can be mixed freely,
+  // but trying on something NOT owned puts back any other not-owned thing
+  // you were previewing, so BUY is always for exactly one item or hero.
+
+  /// Puts every not-owned item in the draft back to the saved look.
+  /// Returns the names of what was taken off.
+  List<String> _dropUnownedItems(_Data s, {String? exceptSlot}) {
+    final dropped = <String>[];
+    final next = Map<String, String>.of(_outD);
+    for (final e in _outD.entries) {
+      if (e.key == exceptSlot) continue;
+      final it = heroItemById(e.value);
+      if (it == null || _ownedItem(it, s)) continue;
+      dropped.add(it.name);
+      final saved = s.outfit[e.key];
+      if (saved != null) {
+        next[e.key] = saved;
+      } else {
+        next.remove(e.key);
+      }
+    }
+    _outD = next;
+    return dropped;
+  }
+
+  void _oneAtATimeNotice(List<String> dropped) {
+    if (dropped.isEmpty) return;
+    _snack('One item at a time: took off ${dropped.join(', ')}');
+  }
+
   void _onItemTap(HeroItem item, _Data s) {
+    _searchFocus.unfocus(); // show the preview again with the item on
     if (heroIsCostume(_heroD)) {
       if (_ruleLockedItem(item, s)) {
         _openItemSheet(item, s);
@@ -341,20 +380,36 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     if (_ruleLockedItem(item, s)) {
       _openItemSheet(item, s); // how to unlock it (you can still try it on)
     }
+    final dropped = <String>[];
     setState(() {
       if (_outD[item.slot.name] == item.id) {
         _outD = Map<String, String>.of(_outD)..remove(item.slot.name);
       } else {
+        if (!_ownedItem(item, s)) {
+          dropped.addAll(_dropUnownedItems(s, exceptSlot: item.slot.name));
+          final h = heroById(_heroD);
+          if (h != null && !_ownedHero(h, s)) {
+            dropped.add(h.name);
+            _heroD = heroIsCostume(s.heroId) ? kDefaultHeroId : s.heroId;
+          }
+        }
         _outD = Map<String, String>.of(_outD)..[item.slot.name] = item.id;
       }
     });
+    _oneAtATimeNotice(dropped);
   }
 
   void _onHeroTap(HeroDef h, _Data s) {
+    _searchFocus.unfocus();
     if (_ruleLockedHero(h, s)) {
       _openHeroSheet(h, s); // how to unlock it (you can still look at it)
     }
-    setState(() => _heroD = h.id);
+    final dropped = <String>[];
+    setState(() {
+      if (!_ownedHero(h, s)) dropped.addAll(_dropUnownedItems(s));
+      _heroD = h.id;
+    });
+    _oneAtATimeNotice(dropped);
   }
 
   Future<void> _purchase(String uid) async {
@@ -489,14 +544,17 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
         );
       }
 
+      final searching = _searchFocus.hasFocus;
       return Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
         child: Column(
           children: [
-            _buildHeader(s),
-            const SizedBox(height: 8),
-            _buildPreviewPanel(s, uid, tier, wide: false),
-            const SizedBox(height: 4),
+            if (!searching) ...[
+              _buildHeader(s),
+              const SizedBox(height: 8),
+              _buildPreviewPanel(s, uid, tier, wide: false),
+              const SizedBox(height: 4),
+            ],
             Expanded(child: browse),
           ],
         ),
@@ -565,23 +623,39 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
           Expanded(
             child: TextField(
               controller: _searchCtl,
+              focusNode: _searchFocus,
               onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+              onSubmitted: (_) => _searchFocus.unfocus(),
+              textInputAction: TextInputAction.search,
+              autocorrect: false,
+              textAlignVertical: TextAlignVertical.center,
               style: const TextStyle(
-                  color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  height: 1.2),
               cursorColor: Rb.neon,
               decoration: const InputDecoration(
-                isCollapsed: true,
+                isDense: true,
+                filled: false,
+                contentPadding: EdgeInsets.symmetric(vertical: 6),
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
                 hintText: 'Search costumes and items',
-                hintStyle: TextStyle(color: Colors.white38, fontWeight: FontWeight.w800),
+                hintStyle: TextStyle(
+                    color: Colors.white38,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14),
               ),
             ),
           ),
-          if (_query.isNotEmpty)
+          if (_query.isNotEmpty || _searchFocus.hasFocus)
             GestureDetector(
               onTap: () => setState(() {
                 _query = '';
                 _searchCtl.clear();
+                _searchFocus.unfocus();
               }),
               child: const Icon(Icons.close, color: Colors.white70, size: 18),
             ),
@@ -633,25 +707,161 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
 
   // ───────────────────────── content ─────────────────────────
 
+  // ── search ──
+  // Searches EVERY category (whatever tab is open). Case, spaces and symbols
+  // are ignored, so even one letter lists everything that contains it.
+  // Best matches first:
+  //   whole name > name starts with it > a word starts with it >
+  //   anywhere in the name > category / rarity / price words > letters in
+  //   order (typo-friendly, "rdcp" finds Red Cap).
+  // Several words ("gold head") must ALL match.
+
+  static String _norm(String v) =>
+      v.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  static int _scoreWord(String q, String name, List<String> tags) {
+    final n = _norm(name);
+    if (q.isEmpty || n.isEmpty) return 0;
+    if (n == q) return 1000;
+    if (n.startsWith(q)) return 900 - n.length;
+    final words = name
+        .toLowerCase()
+        .split(RegExp(r'[^a-z0-9]+'))
+        .where((w) => w.isNotEmpty);
+    if (words.any((w) => w.startsWith(q))) return 800 - n.length;
+    final at = n.indexOf(q);
+    if (at >= 0) return 700 - at * 5 - n.length;
+    // one letter: names only (every category word would match otherwise)
+    if (q.length < 2) return 0;
+    for (final t in tags) {
+      if (_norm(t).contains(q)) return 500;
+    }
+    if (q.length >= 2) {
+      var i = 0;
+      for (var k = 0; k < n.length && i < q.length; k++) {
+        if (n[k] == q[i]) i++;
+      }
+      if (i == q.length) return 300 - n.length;
+    }
+    return 0;
+  }
+
+  /// 0 = no match. Every word of the query has to match something.
+  static int _score(String query, String name, List<String> tags) {
+    final words = query
+        .toLowerCase()
+        .split(RegExp(r'\s+'))
+        .map(_norm)
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (words.isEmpty) return 0;
+    var total = 0;
+    for (final w in words) {
+      final sc = _scoreWord(w, name, tags);
+      if (sc == 0) return 0;
+      total += sc;
+    }
+    return total;
+  }
+
+  List<String> _itemTags(HeroItem i) {
+    final r = _rarity(i.rarity).label;
+    final tab = _tabs.where((t) => t.slot == i.slot);
+    return [
+      i.slot.label,
+      if (tab.isNotEmpty) tab.first.label,
+      r,
+      if (r == 'LEGEND') 'legendary',
+      'item',
+      _priceText(i),
+      if (i.rule.label != null) i.rule.label!,
+    ];
+  }
+
+  List<String> _heroTags(HeroDef h) => [
+        'hero',
+        'heroes',
+        h.costume ? 'costume' : 'main hero',
+        h.rarityLabel,
+        h.tagline,
+        if (h.coinPrice > 0) '${h.coinPrice}' else (h.starter ? 'free' : 'earn'),
+      ];
+
   Widget _buildContent(_Data s, BodyTier tier) {
     if (_query.isNotEmpty) {
-      final heroes = (_tab == 'featured' || _tab == 'heroes')
-          ? kHeroes.where((h) => h.name.toLowerCase().contains(_query)).toList()
-          : <HeroDef>[];
-      final items = kHeroItems
-          .where((i) =>
-              i.name.toLowerCase().contains(_query) &&
-              (_tab == 'featured' || _tab == 'heroes' || _tab == i.slot.name))
-          .toList();
-      if (heroes.isEmpty && items.isEmpty) {
-        return const Center(child: BlockText('NOTHING FOUND', size: 14, stroke: 3.5));
+      final hs = <(HeroDef, int)>[
+        for (final h in kHeroes)
+          if (_score(_query, h.name, _heroTags(h)) case final sc when sc > 0)
+            (h, sc),
+      ]..sort((a, b) => b.$2.compareTo(a.$2));
+      final its = <(HeroItem, int)>[
+        for (final i in kHeroItems)
+          if (_score(_query, i.name, _itemTags(i)) case final sc when sc > 0)
+            (i, sc),
+      ]..sort((a, b) {
+          final c = b.$2.compareTo(a.$2);
+          return c != 0 ? c : a.$1.coins.compareTo(b.$1.coins);
+        });
+      final total = hs.length + its.length;
+      if (total == 0) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: BlockText('NOTHING FOUND FOR "${_query.toUpperCase()}"',
+                size: 14, stroke: 3.5, align: TextAlign.center),
+          ),
+        );
       }
-      return _buildGrid(s, tier, heroes: heroes, items: items);
+      // the better matches come first, heroes or items
+      final heroesFirst =
+          hs.isNotEmpty && (its.isEmpty || hs.first.$2 >= its.first.$2);
+      final heroes = [for (final e in hs) e.$1];
+      final items = [for (final e in its) e.$1];
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 6),
+            child: BlockText(
+              '$total RESULT${total == 1 ? '' : 'S'} FOR "${_query.toUpperCase()}"  •  ALL CATEGORIES',
+              size: 10.5,
+              stroke: 2.5,
+              color: const Color(0xFFB8BDC4),
+            ),
+          ),
+          Expanded(
+            child: heroesFirst
+                ? _buildGrid(s, tier, heroes: heroes, items: items)
+                : _buildMixedGrid(s, tier, items: items, heroes: heroes),
+          ),
+        ],
+      );
     }
     if (_tab == 'featured') return _buildFeatured(s, tier);
     if (_tab == 'heroes') return _buildGrid(s, tier, heroes: kHeroes, items: const []);
     final slot = _tabs.firstWhere((t) => t.key == _tab).slot!;
     return _buildGrid(s, tier, heroes: const [], items: heroItemsIn(slot));
+  }
+
+  /// Same grid, items before heroes (when an item is the best match).
+  Widget _buildMixedGrid(_Data s, BodyTier tier,
+      {required List<HeroItem> items, required List<HeroDef> heroes}) {
+    return LayoutBuilder(builder: (context, c) {
+      final cols = (c.maxWidth / 130).floor().clamp(3, 6);
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(2, 4, 2, 16),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: cols,
+          crossAxisSpacing: 9,
+          mainAxisSpacing: 6,
+          childAspectRatio: 0.7,
+        ),
+        itemCount: items.length + heroes.length,
+        itemBuilder: (context, i) => i < items.length
+            ? _itemTile(items[i], s, tier)
+            : _heroTile(heroes[i - items.length], s, tier),
+      );
+    });
   }
 
   Widget _buildGrid(_Data s, BodyTier tier,
@@ -1238,6 +1448,16 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
     );
   }
 
+  /// Name of the one not-owned thing in the draft (what BUY pays for).
+  String? _buyingName(_Data s) {
+    final h = heroById(_heroD);
+    if (h != null && !_ownedHero(h, s)) return h.name;
+    for (final i in _draftItems()) {
+      if (!_ownedItem(i, s)) return i.name;
+    }
+    return null;
+  }
+
   String _costText(int c) => c > 0 ? '${_fmt(c)} \u{1FA99}' : '0';
 
   Widget _buildActionRow(_Data s, String uid) {
@@ -1283,7 +1503,8 @@ class _AvatarShopScreenState extends State<AvatarShopScreen> {
       onTap = () => _askThenSave(uid, s);
     } else {
       label = 'BUY';
-      sub = _costText(cost);
+      final what = _buyingName(s);
+      sub = what == null ? _costText(cost) : '$what • ${_costText(cost)}';
       onTap = () => _askThenSave(uid, s);
     }
 

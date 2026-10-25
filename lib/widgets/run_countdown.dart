@@ -65,10 +65,15 @@ class _RunCountdownState extends State<RunCountdown> {
   @override
   Widget build(BuildContext context) {
     final go = _n <= 0;
+    // Full width so the column is centred (the Scaffold body gives loose
+    // constraints, which otherwise shrink it and pin it to the left).
     return SafeArea(
-      child: Padding(
+      child: SizedBox(
+        width: double.infinity,
+        child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Spacer(),
             const BlockText('GET READY!', size: 22, stroke: 5),
@@ -115,6 +120,7 @@ class _RunCountdownState extends State<RunCountdown> {
               ),
           ],
         ),
+      ),
       ),
     );
   }

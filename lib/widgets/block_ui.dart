@@ -49,6 +49,11 @@ abstract final class Rb {
   static const bronzeEdge= Color(0xFF6B3E14);
 }
 
+/// Game font (bundled in assets/fonts, see pubspec.yaml): chunky Lilita One
+/// for every BlockText label; Nunito is the app's everyday text font.
+const String kBlockFont = 'LilitaOne';
+const String kBodyFont = 'Nunito';
+
 const List<String> kBlockFontFallback = [
   'Arial Rounded MT Bold',
   'Arial Black',
@@ -78,10 +83,12 @@ class BlockText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final base = TextStyle(
-      fontFamily: 'Arial Rounded MT Bold',
+      fontFamily: kBlockFont,
       fontFamilyFallback: kBlockFontFallback,
       fontSize: size,
-      fontWeight: FontWeight.w900,
+      // Lilita One has one (already heavy) weight: no fake bolding
+      fontWeight: FontWeight.w400,
+      letterSpacing: size * 0.02,
       height: 1.1,
     );
     final overflow = maxLines == null ? null : TextOverflow.ellipsis;

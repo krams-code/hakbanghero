@@ -135,6 +135,10 @@ class HeroSprite extends StatelessWidget {
     );
   }
 
+  /// Girl SPROUT art for this player (null gender = the signed-in player's).
+  /// (No gender saved = the classic boy SPROUT, never the viewer's own look.)
+  bool get _girl => genderKey(gender) == 'female';
+
   /// Hero art in the same box as the classic sprite (or its face crop).
   Widget _hero(String hero, BodyTier tier) {
     final width = height * kSpriteW / kSpriteH;
@@ -142,7 +146,7 @@ class HeroSprite extends StatelessWidget {
       return SizedBox(
         width: width,
         height: height,
-        child: HeroStill(heroId: hero, tier: tier, outfit: outfit),
+        child: HeroStill(heroId: hero, tier: tier, outfit: outfit, girl: _girl),
       );
     }
     // face crop: the head is ~55% of the picture width, so show the picture
@@ -161,7 +165,7 @@ class HeroSprite extends StatelessWidget {
           offset: Offset(0, -0.62 * size),
           child: SizedBox(
             height: 2.77 * size,
-            child: HeroStill(heroId: hero, tier: tier, outfit: outfit),
+            child: HeroStill(heroId: hero, tier: tier, outfit: outfit, girl: _girl),
           ),
         ),
       ),

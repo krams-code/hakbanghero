@@ -76,6 +76,7 @@ class _MainShellState extends State<MainShell> {
     Sound.I.music(Bgm.menu);
     PerfProbe.start(); // frame / jank meter (debug + profile builds only)
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _maybeAskGender();
       await _maybeChooseHero();
       await _maybeStartTutorial();
       await _migrateCrystals();
@@ -161,6 +162,75 @@ class _MainShellState extends State<MainShell> {
   }
 
   // First launch with heroes: accounts that never picked one choose now.
+  /// Older / Google accounts have no gender saved, so they are missing from
+  /// the BOYS / GIRLS boards and always look like boy SPROUT. Ask once.
+  Future<void> _maybeAskGender() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    try {
+      final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+      final data = (await ref.get()).data();
+      if (data == null || data['character_created'] == false) return;
+      if (genderKey(data['gender']) != null || !mounted) return;
+      final pick = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) {
+          Widget choice(String value, String label, Color c, Color e) => Expanded(
+                child: PressBlock(
+                  color: c,
+                  edge: e,
+                  depth: 5,
+                  radius: 14,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  onTap: () => Navigator.of(ctx).pop(value),
+                  child: Center(child: BlockText(label, size: 17, stroke: 4)),
+                ),
+              );
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(22),
+            child: Block(
+              color: Rb.slate,
+              edge: Rb.slateEdge,
+              depth: 6,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const BlockText('BOY OR GIRL?',
+                      size: 20, stroke: 4.5, align: TextAlign.center),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Pick one so your hero looks right and you show up on the '
+                    'BOYS or GIRLS leaderboard.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Color(0xFFD7DADD),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(children: [
+                    choice('male', '\u2642 BOY', Rb.blue, Rb.blueEdge),
+                    const SizedBox(width: 10),
+                    choice('female', '\u2640 GIRL', const Color(0xFFFF5FA2),
+                        const Color(0xFF8A1F55)),
+                  ]),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      if (pick != null) await ref.update({'gender': pick});
+    } catch (_) {
+      // never block the app on this; it asks again next launch
+    }
+  }
+
   Future<void> _maybeChooseHero() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;

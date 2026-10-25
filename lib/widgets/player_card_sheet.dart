@@ -149,7 +149,8 @@ class _PlayerCardState extends State<_PlayerCard> {
       if (v is num) stars += v.toInt();
     }
     final owned = d['owned_heroes'] is List ? (d['owned_heroes'] as List).length : 1;
-    final hero = heroById(d['hero_id'] as String?);
+    final hero = heroById(heroIdOf(d));
+    final girl = genderKey(d['gender']) == 'female';
     final created = d['created_at'];
     final since = created is Timestamp ? _month(created.toDate()) : null;
     final avg = runs > 0 ? km / runs : 0.0;
@@ -203,7 +204,10 @@ class _PlayerCardState extends State<_PlayerCard> {
                           fontSize: 12,
                           fontWeight: FontWeight.w900)),
                   if (hero != null)
-                    Text(hero.costume ? 'Costume: ${hero.name}' : 'Hero: ${hero.name}',
+                    Text(
+                        hero.costume
+                            ? 'Costume: ${hero.name}'
+                            : 'Hero: ${heroDisplayName(hero, girl: girl)}',
                         style: const TextStyle(
                             color: Color(0xFF3A4046),
                             fontSize: 12,

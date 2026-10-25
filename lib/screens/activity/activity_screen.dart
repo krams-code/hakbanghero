@@ -25,6 +25,86 @@ class _ActivityScreenState extends State<ActivityScreen> {
 
   ActivityType? _filter;
 
+  // ── Search / filter / sort (for players with lots of sessions) ──
+  final TextEditingController _searchCtl = TextEditingController();
+  String _query = '';
+  _Range _range = _Range.all;
+  _Sort _sort = _Sort.newest;
+  bool _showTools = false;
+  static const int _pageSize = 20;
+  int _shown = _pageSize;
+
+  @override
+  void dispose() {
+    _searchCtl.dispose();
+    super.dispose();
+  }
+
+  bool get _toolsActive =>
+      _query.isNotEmpty || _range != _Range.all || _sort != _Sort.newest;
+
+  bool get _byDate => _sort == _Sort.newest || _sort == _Sort.oldest;
+
+  void _resetTools() => setState(() {
+        _searchCtl.clear();
+        _query = '';
+        _range = _Range.all;
+        _sort = _Sort.newest;
+        _shown = _pageSize;
+      });
+
+  /// Words a session can be found by: type, date (month, weekday, numbers),
+  /// time, distance, "gps".
+  static String _searchText(ActivitySession s) {
+    final t = s.startTime;
+    return [
+      s.type.label,
+      DateFormat('MMMM MMM d yyyy EEEE EEE').format(t),
+      DateFormat('M/d/yyyy yyyy-MM-dd h:mm a').format(t),
+      '${s.distanceKm.toStringAsFixed(1)} km',
+      '${s.distanceKm.toStringAsFixed(2)}km',
+      if (s.userPick != s.type) 'gps override',
+    ].join(' ').toLowerCase();
+  }
+
+  List<ActivitySession> _apply(List<ActivitySession> all) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final DateTime? from = switch (_range) {
+      _Range.all => null,
+      _Range.week => today.subtract(const Duration(days: 6)),
+      _Range.month => today.subtract(const Duration(days: 29)),
+      _Range.year => DateTime(now.year),
+    };
+    final words =
+        _query.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    final out = all.where((s) {
+      if (_filter != null && s.type != _filter) return false;
+      if (from != null && s.startTime.isBefore(from)) return false;
+      if (words.isNotEmpty) {
+        final text = _searchText(s);
+        if (!words.every(text.contains)) return false;
+      }
+      return true;
+    }).toList();
+
+    double pace(ActivitySession s) =>
+        s.distanceKm > 0 ? s.durationSeconds / s.distanceKm : double.infinity;
+    switch (_sort) {
+      case _Sort.newest:
+        out.sort((a, b) => b.startTime.compareTo(a.startTime));
+      case _Sort.oldest:
+        out.sort((a, b) => a.startTime.compareTo(b.startTime));
+      case _Sort.longest:
+        out.sort((a, b) => b.distanceKm.compareTo(a.distanceKm));
+      case _Sort.fastest:
+        out.sort((a, b) => pace(a).compareTo(pace(b)));
+      case _Sort.xp:
+        out.sort((a, b) => b.xpEarned.compareTo(a.xpEarned));
+    }
+    return out;
+  }
+
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   static (Color, Color) _colors(ActivityType t) {
@@ -76,8 +156,8 @@ class _ActivityScreenState extends State<ActivityScreen> {
   }
 
   Widget _content(List<ActivitySession> all) {
-    final list =
-        _filter == null ? all : all.where((s) => s.type == _filter).toList();
+    final list = _apply(all);
+    final page = list.take(_shown).toList();
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
@@ -85,6 +165,12 @@ class _ActivityScreenState extends State<ActivityScreen> {
         _header(all.length),
         const SizedBox(height: 14),
         _filters(),
+        const SizedBox(height: 10),
+        _searchBar(),
+        if (_showTools) ...[
+          const SizedBox(height: 10),
+          _toolsPanel(),
+        ],
         const SizedBox(height: 14),
         if (all.isEmpty)
           _message('🏃', 'NO RUNS YET', 'Hit RUN to log your first session!')
@@ -94,9 +180,44 @@ class _ActivityScreenState extends State<ActivityScreen> {
           _chart(list),
           const SizedBox(height: 14),
           if (list.isEmpty)
-            _message('🔍', 'NOTHING HERE', 'No sessions match this filter.')
-          else
-            ..._history(list),
+            _message(
+              '🔍',
+              'NOTHING HERE',
+              'No sessions match your search or filters.',
+              action: (
+                'CLEAR FILTERS',
+                () {
+                  _resetTools();
+                  setState(() => _filter = null);
+                }
+              ),
+            )
+          else ...[
+            _resultsLine(list.length),
+            const SizedBox(height: 8),
+            ..._history(page),
+            if (list.length > page.length)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: PressBlock(
+                  color: Rb.blue,
+                  edge: Rb.blueEdge,
+                  depth: 5,
+                  radius: 12,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  onTap: () => setState(() => _shown += _pageSize),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Center(
+                      child: BlockText(
+                          'SHOW MORE (${list.length - page.length} LEFT)',
+                          size: 13,
+                          stroke: 3.5),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ],
       ],
     );
@@ -146,7 +267,10 @@ class _ActivityScreenState extends State<ActivityScreen> {
             radius: 12,
             forcePressed: sel,
             padding: const EdgeInsets.symmetric(vertical: 11),
-            onTap: () => setState(() => _filter = t),
+            onTap: () => setState(() {
+              _filter = t;
+              _shown = _pageSize;
+            }),
             child: Center(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
@@ -174,6 +298,159 @@ class _ActivityScreenState extends State<ActivityScreen> {
       chip('JOG', ActivityType.jog, j.$1, j.$2, icon: AppIcons.jogBolt),
       chip('RUN', ActivityType.run, r.$1, r.$2, icon: AppIcons.runFire),
     ]);
+  }
+
+  // ── Search bar + filter button ────────────────────────────────────────
+  Widget _searchBar() {
+    final toolsOn =
+        _showTools || _range != _Range.all || _sort != _Sort.newest;
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Rb.panel,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.black, width: 3),
+              boxShadow: const [
+                BoxShadow(
+                    color: Colors.black, offset: Offset(0, 3), blurRadius: 0),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search, color: Colors.white70, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _searchCtl,
+                    onChanged: (v) => setState(() {
+                      _query = v.trim().toLowerCase();
+                      _shown = _pageSize;
+                    }),
+                    onSubmitted: (_) =>
+                        FocusManager.instance.primaryFocus?.unfocus(),
+                    textInputAction: TextInputAction.search,
+                    autocorrect: false,
+                    textAlignVertical: TextAlignVertical.center,
+                    cursorColor: Rb.neon,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        height: 1.2),
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      filled: false,
+                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      hintText: 'Search: october, monday, 5 km...',
+                      hintStyle: TextStyle(
+                          color: Colors.white38,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14),
+                    ),
+                  ),
+                ),
+                if (_query.isNotEmpty)
+                  GestureDetector(
+                    onTap: () => setState(() {
+                      _searchCtl.clear();
+                      _query = '';
+                      _shown = _pageSize;
+                    }),
+                    child: const Icon(Icons.close,
+                        color: Colors.white70, size: 20),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        PressBlock(
+          color: toolsOn ? Rb.gold : Rb.panel,
+          edge: toolsOn ? Rb.goldEdge : Rb.panelEdge,
+          depth: 4,
+          radius: 12,
+          forcePressed: _showTools,
+          padding: EdgeInsets.zero,
+          onTap: () => setState(() => _showTools = !_showTools),
+          child: const SizedBox(
+            width: 46,
+            height: 40,
+            child: Center(
+                child: Icon(Icons.tune, color: Colors.white, size: 22)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// WHEN (date range) + SORT BY.
+  Widget _toolsPanel() {
+    Widget pick(String label, bool sel, VoidCallback set) => PressBlock(
+          color: sel ? Rb.blue : Rb.slot,
+          edge: sel ? Rb.blueEdge : Rb.slateEdge,
+          depth: 3,
+          radius: 10,
+          forcePressed: sel,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          onTap: () => setState(() {
+            set();
+            _shown = _pageSize;
+          }),
+          child: BlockText(label, size: 10.5, stroke: 3),
+        );
+
+    return Block(
+      color: Rb.panel,
+      edge: Rb.panelEdge,
+      depth: 5,
+      padding: const EdgeInsets.all(12),
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const BlockText('📅 WHEN', size: 12, stroke: 3),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 8, children: [
+              for (final r in _Range.values)
+                pick(r.label, r == _range, () => _range = r),
+            ]),
+            const SizedBox(height: 12),
+            const BlockText('↕️ SORT BY', size: 12, stroke: 3),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 8, children: [
+              for (final o in _Sort.values)
+                pick(o.label, o == _sort, () => _sort = o),
+            ]),
+            if (_toolsActive) ...[
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: _resetTools,
+                child: const BlockText('✖ RESET SEARCH & FILTERS',
+                    size: 10.5, stroke: 3, color: Color(0xFFFFB4A8)),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _resultsLine(int count) {
+    final bits = <String>[
+      '$count SESSION${count == 1 ? '' : 'S'}',
+      if (_range != _Range.all) _range.label,
+      if (_sort != _Sort.newest) 'SORTED: ${_sort.label}',
+    ];
+    return BlockText(bits.join('  •  '),
+        size: 10.5, stroke: 2.5, color: const Color(0xFFB8BDC4));
   }
 
   // ── Summary ───────────────────────────────────────────────────────────
@@ -381,7 +658,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
     String? lastKey;
     for (final s in list) {
       final key = DateFormat('yyyyMMdd').format(s.startTime);
-      if (key != lastKey) {
+      if (_byDate && key != lastKey) {
         lastKey = key;
         out.add(Padding(
           padding: const EdgeInsets.only(top: 6, bottom: 10),
@@ -463,7 +740,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   child: BlockText(s.type.label.toUpperCase(),
                       size: 15, stroke: 3.5),
                 ),
-                BlockText(DateFormat('h:mm a').format(s.startTime),
+                BlockText(
+                    _byDate
+                        ? DateFormat('h:mm a').format(s.startTime)
+                        : DateFormat('MMM d, yyyy • h:mm a')
+                            .format(s.startTime),
                     size: 10, stroke: 2.5, color: const Color(0xFFB8BDC4)),
                 if (overridden)
                   const BlockText('📡 GPS OVERRIDE',
@@ -546,14 +827,21 @@ class _ActivityScreenState extends State<ActivityScreen> {
     );
   }
 
-  Widget _message(String emoji, String title, String sub) => Padding(
+  Widget _message(String emoji, String title, String sub,
+          {(String, VoidCallback)? action}) =>
+      Padding(
         padding: const EdgeInsets.symmetric(vertical: 20),
         child: Block(
           color: Rb.panel,
           edge: Rb.panelEdge,
           depth: 6,
           padding: const EdgeInsets.all(20),
-          child: Column(children: [
+          // full width so everything inside sits in the middle
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
             emoji == '🏃'
                 ? const SizedBox(width: 110, height: 110, child: FxLoop(Fx.runLoader))
                 : EmojiText(emoji, style: const TextStyle(fontSize: 40)),
@@ -565,7 +853,42 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 stroke: 2.5,
                 color: const Color(0xFFB8BDC4),
                 align: TextAlign.center),
+            if (action != null) ...[
+              const SizedBox(height: 12),
+              PressBlock(
+                color: Rb.gold,
+                edge: Rb.goldEdge,
+                depth: 4,
+                radius: 12,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                onTap: action.$2,
+                child: BlockText(action.$1, size: 12, stroke: 3),
+              ),
+            ],
           ]),
+          ),
         ),
       );
+}
+
+enum _Range {
+  all('ALL TIME'),
+  week('LAST 7 DAYS'),
+  month('LAST 30 DAYS'),
+  year('THIS YEAR');
+
+  final String label;
+  const _Range(this.label);
+}
+
+enum _Sort {
+  newest('NEWEST'),
+  oldest('OLDEST'),
+  longest('LONGEST'),
+  fastest('FASTEST PACE'),
+  xp('MOST XP');
+
+  final String label;
+  const _Sort(this.label);
 }

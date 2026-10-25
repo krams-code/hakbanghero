@@ -21,6 +21,14 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  if (kIsWeb) {
+    // Keep data + not-yet-sent writes on the device (IndexedDB), so a run
+    // finished on weak signal still uploads after a reload.
+    try {
+      FirebaseFirestore.instance.settings =
+          const Settings(persistenceEnabled: true);
+    } catch (_) {}
+  }
   // Sound is optional: never let it hold up the app.
   try {
     await Sound.I.init().timeout(const Duration(seconds: 3));
@@ -72,6 +80,7 @@ class HakbangHeroApp extends StatelessWidget {
       ),
       theme: ThemeData(
         brightness: Brightness.dark,
+        fontFamily: 'Nunito', // bundled, see pubspec.yaml (BlockText uses Lilita One)
         scaffoldBackgroundColor: const Color(0xFF060C06),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF00FF41),

@@ -383,6 +383,7 @@ class _LiveTrackerAnimationState extends State<LiveTrackerAnimation>
         heroId: heroId,
         tier: tier,
         pose: pose,
+        // the runner is always the signed-in player: HeroLook decides
         outfit: outfit,
         height: kHeroH,
         shadow: false, // the scene already draws the ground shadow

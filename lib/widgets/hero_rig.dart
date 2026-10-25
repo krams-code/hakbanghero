@@ -94,6 +94,9 @@ class HeroRig extends StatefulWidget {
   /// Worn items (slot name -> item id), see hero_items.dart.
   final Map<String, String> outfit;
 
+  /// Girl SPROUT art (that player's gender). Null = the signed-in player's.
+  final bool? girl;
+
   const HeroRig({
     super.key,
     required this.heroId,
@@ -102,6 +105,7 @@ class HeroRig extends StatefulWidget {
     this.height = 220,
     this.shadow = true,
     this.outfit = const <String, String>{},
+    this.girl,
   });
 
   @override
@@ -159,7 +163,7 @@ class _HeroRigState extends State<HeroRig> with SingleTickerProviderStateMixin {
       height: h,
       child: _RigBody(
         anim: _c,
-        heroId: widget.heroId,
+        heroId: heroArtId(widget.heroId, girl: widget.girl),
         tier: widget.tier,
         pose: widget.pose,
         w: w,
@@ -407,12 +411,16 @@ class HeroStill extends StatelessWidget {
   final FilterQuality filterQuality;
   final Map<String, String> outfit;
 
+  /// Girl SPROUT art (that player's gender). Null = the signed-in player's.
+  final bool? girl;
+
   const HeroStill({
     super.key,
     required this.heroId,
     required this.tier,
     this.filterQuality = FilterQuality.medium,
     this.outfit = const <String, String>{},
+    this.girl,
   });
 
   @override
@@ -439,7 +447,7 @@ class HeroStill extends StatelessWidget {
         children: [
           for (final s in outfitSvgs(outfit, tier, 'back')) svg(s),
           Image.asset(
-            heroLayerAsset(heroId, tier, 'full'),
+            heroLayerAsset(heroArtId(heroId, girl: girl), tier, 'full'),
             fit: BoxFit.fill,
             filterQuality: filterQuality,
             gaplessPlayback: true,
@@ -460,12 +468,14 @@ class HeroStill extends StatelessWidget {
 }
 
 /// Decode a hero's pictures ahead of time so the first frame never pops in.
-Future<void> precacheHero(BuildContext context, String heroId, BodyTier tier) async {
+Future<void> precacheHero(BuildContext context, String heroId, BodyTier tier,
+    {bool? girl}) async {
   if (heroIsCostume(heroId)) {
     await precacheImage(AssetImage(heroLayerAsset(heroId, tier, 'full')), context);
     return;
   }
   for (final l in const ['full', 'leg_back', 'leg_front', 'arm_back', 'body', 'arm_front', 'head']) {
-    await precacheImage(AssetImage(heroLayerAsset(heroId, tier, l)), context);
+    await precacheImage(
+        AssetImage(heroLayerAsset(heroArtId(heroId, girl: girl), tier, l)), context);
   }
 }

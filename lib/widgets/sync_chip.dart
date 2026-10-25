@@ -40,7 +40,18 @@ class _SyncChipState extends State<SyncChip> {
     if (uid == null || _busy) return;
     if (!silent) setState(() => _busy = true);
     try {
-      await RunOutbox.flush(uid);
+      final sent = await RunOutbox.flush(uid);
+      if (!silent && mounted) {
+        final err = RunOutbox.lastError.value;
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            duration: const Duration(seconds: 6),
+            content: Text(sent > 0
+                ? '\u2705 $sent run${sent == 1 ? '' : 's'} saved!'
+                : 'Still not saved. ${err ?? ''}'),
+          ));
+      }
     } finally {
       if (mounted && !silent) setState(() => _busy = false);
     }
@@ -65,16 +76,39 @@ class _SyncChipState extends State<SyncChip> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: BlockText(
-                      _busy
-                          ? '\u{1F4E1} SYNCING...'
-                          : '\u{1F4E1} $n RUN${n == 1 ? '' : 'S'} WAITING TO SYNC • TAP TO RETRY',
-                      size: 11,
-                      stroke: 3,
-                      align: TextAlign.center,
-                    ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: BlockText(
+                          _busy
+                              ? '\u{1F4E1} SYNCING...'
+                              : '\u{1F4E1} $n RUN${n == 1 ? '' : 'S'} WAITING TO SYNC • TAP TO RETRY',
+                          size: 11,
+                          stroke: 3,
+                          align: TextAlign.center,
+                        ),
+                      ),
+                      ValueListenableBuilder<String?>(
+                        valueListenable: RunOutbox.lastError,
+                        builder: (_, err, __) => err == null
+                            ? const SizedBox.shrink()
+                            : Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: Text(
+                                  err,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Color(0xFFFFD7CF),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                      ),
+                    ],
                   ),
                 ),
               ],

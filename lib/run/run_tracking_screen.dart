@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart' hide ActivityType;
+import 'package:geolocator/geolocator.dart' as geo show ActivityType;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/presence.dart';
@@ -91,6 +94,23 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   Timer? _timer;
 
   int _elapsedSeconds = 0;
+
+  /// Wall-clock start of the run. Elapsed time is always now - start, so a
+  /// locked screen / backgrounded browser (which slows timers) loses nothing.
+  DateTime? _startedAt;
+
+  /// Last GPS point that was COUNTED (distance is measured from here).
+  Position? _anchor;
+
+  /// Seconds of real movement, measured between counted GPS points.
+  double _activeSec = 0;
+
+  // ── Location check before the run (phase: locating) ──
+  bool _useGps = true;
+  bool _locBusy = false;
+  String _locLabel = 'CHECKING LOCATION...';
+  int _locTries = 0;
+  Completer<void>? _firstFix;
 
   DateTime? _lastMoveAt;
 
@@ -214,13 +234,13 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     return "$m'${s.toString().padLeft(2, '0')}\"";
   }
 
+  /// Average speed while moving (distance / moving time), km/h.
   double get _avgSpeed {
-    if (_speedSamples.isEmpty) {
-      return 0;
+    if (_activeSec >= 10 && _distanceKm > 0) {
+      return _distanceKm / (_activeSec / 3600);
     }
-
-    return _speedSamples.reduce((a, b) => a + b) /
-        _speedSamples.length;
+    if (_speedSamples.isEmpty) return 0;
+    return _speedSamples.reduce((a, b) => a + b) / _speedSamples.length;
   }
 
   // ── EXIT ───────────────────────────────────────────────────────────────────
@@ -275,10 +295,66 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     _beginCountdown();
   }
 
-  /// Warm-up finished (or skipped): 3-2-1 first, THEN the run starts.
+  /// Warm-up finished (or skipped): sort out location FIRST. Nothing runs
+  /// (no timer, no countdown) until GPS is ready or the player picks
+  /// RUN WITHOUT GPS. Then 3-2-1, then the run.
   void _beginCountdown() {
-    if (_phase == _Phase.countdown || _phase == _Phase.tracking) return;
-    setState(() => _phase = _Phase.countdown);
+    if (_phase == _Phase.locating ||
+        _phase == _Phase.countdown ||
+        _phase == _Phase.tracking) {
+      return;
+    }
+    setState(() {
+      _phase = _Phase.locating;
+      _permIssue = null;
+      _locTries = 0;
+    });
+    _checkLocation();
+  }
+
+  /// Ask for location, start the GPS and wait (briefly) for a first fix.
+  /// Shows a loading screen the whole time; TRY AGAIN runs this again.
+  Future<void> _checkLocation() async {
+    if (_locBusy) return;
+    setState(() {
+      _locBusy = true;
+      _permIssue = null;
+      _locLabel = 'CHECKING LOCATION...';
+    });
+    final shownAt = DateTime.now();
+    final granted = await _requestPermission();
+    if (granted && mounted && _phase == _Phase.locating) {
+      setState(() => _locLabel = 'FINDING GPS SIGNAL...');
+      _firstFix = Completer<void>();
+      _startGpsStream();
+      // a first fix gives the run its exact start point; never wait forever
+      await _firstFix!.future
+          .timeout(const Duration(seconds: 10), onTimeout: () {});
+    }
+    // keep the loader up long enough to be seen (no black flash)
+    final shown = DateTime.now().difference(shownAt);
+    const minShow = Duration(milliseconds: 900);
+    if (shown < minShow) await Future<void>.delayed(minShow - shown);
+    if (!mounted || _phase != _Phase.locating) return;
+    setState(() {
+      _locBusy = false;
+      _locTries++;
+      if (granted) {
+        _useGps = true;
+        _phase = _Phase.countdown;
+      }
+    });
+  }
+
+  /// Leave the location check / countdown without running.
+  void _cancelStart() {
+    _positionSub?.cancel();
+    _positionSub = null;
+    _anchor = null;
+    setState(() {
+      _locBusy = false;
+      _phase = _mode.isStage ? _Phase.briefing : _Phase.preRun;
+    });
   }
 
   // ── Permissions ────────────────────────────────────────────────────────────
@@ -329,39 +405,56 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     }
   }
 
-  /// Location is unavailable. Never leave the player stuck: ask what to do.
-  Future<void> _onLocationBlocked() async {
-    if (!mounted) return;
-    final forever = _permIssue == 'forever';
-    final msg = _permIssue == 'service'
-        ? 'Location services are turned off on this device.'
-        : forever
-            ? 'Location permission is blocked. Enable it in your '
-                'device / browser settings.'
-            : 'Location permission was not granted.';
+  /// OPEN SETTINGS / HOW TO TURN ON.
+  /// Phone app: jumps to the right settings page (iOS only allows the app's
+  /// own page). Web (incl. iPhone Safari): a website can't open settings, so
+  /// show step-by-step instructions instead of a button that does nothing.
+  Future<void> _openLocationSettings(BuildContext ctx) async {
+    if (!kIsWeb) {
+      var opened = false;
+      try {
+        opened = (_permIssue == 'service' &&
+                defaultTargetPlatform == TargetPlatform.android)
+            ? await Geolocator.openLocationSettings()
+            : await Geolocator.openAppSettings();
+      } catch (_) {}
+      if (opened) return;
+    }
+    if (!ctx.mounted) return;
 
-    Widget btn(String label, Color c, Color e, String result,
-            {VoidCallback? onTap}) =>
-        Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: PressBlock(
-            color: c,
-            edge: e,
-            depth: 5,
-            radius: 12,
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            onTap: onTap ?? () => Navigator.of(context).pop(result),
-            child: SizedBox(
-              width: double.infinity,
-              child: Center(child: BlockText(label, size: 14, stroke: 3.5)),
-            ),
-          ),
-        );
+    final ios = defaultTargetPlatform == TargetPlatform.iOS;
+    final steps = _permIssue == 'service'
+        ? (ios
+            ? '1. Open the Settings app.\n'
+                '2. Privacy & Security → Location Services.\n'
+                '3. Turn Location Services ON.\n'
+                '4. Come back and tap TRY AGAIN.'
+            : '1. Swipe down from the top of the screen.\n'
+                '2. Turn Location ON.\n'
+                '3. Come back and tap TRY AGAIN.')
+        : kIsWeb
+            ? (ios
+                ? '1. Open the Settings app.\n'
+                    '2. Privacy & Security → Location Services.\n'
+                    '3. Tap "Safari Websites" → choose "While Using the App".\n'
+                    '4. In Safari, tap "aA" next to the address → Website '
+                    'Settings → Location → Allow.\n'
+                    '5. Come back and tap TRY AGAIN.'
+                : '1. Tap the lock / settings icon next to the web address.\n'
+                    '2. Permissions → Location → Allow.\n'
+                    '3. Come back and tap TRY AGAIN.')
+            : (ios
+                ? '1. Open the Settings app.\n'
+                    '2. Scroll down and tap HakbangHero.\n'
+                    '3. Location → "While Using the App".\n'
+                    '4. Come back and tap TRY AGAIN.'
+                : '1. Open Settings → Apps → HakbangHero.\n'
+                    '2. Permissions → Location → Allow.\n'
+                    '3. Come back and tap TRY AGAIN.');
 
-    final choice = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
+    await showDialog<void>(
+      context: ctx,
+      builder: (c) => Dialog(
         backgroundColor: Colors.transparent,
         insetPadding: const EdgeInsets.all(20),
         child: Block(
@@ -373,55 +466,136 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const BlockText('LOCATION NEEDED',
+              const BlockText('TURN ON LOCATION',
                   size: 18, stroke: 4, align: TextAlign.center),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Text(
-                '$msg\n\nGPS tracks your distance. You can still run '
-                'with the timer only.',
-                textAlign: TextAlign.center,
+                steps,
                 style: const TextStyle(
                   color: Color(0xFFD7DADD),
                   fontSize: 13,
                   fontWeight: FontWeight.w700,
-                  height: 1.35,
+                  height: 1.45,
                 ),
               ),
-              const SizedBox(height: 6),
-              btn('RUN WITHOUT GPS', Rb.green, Rb.greenEdge, 'nogps'),
-              btn('TRY AGAIN', Rb.blue, Rb.blueEdge, 'retry'),
-              if (forever)
-                btn('OPEN SETTINGS', Rb.gold, Rb.goldEdge, 'settings',
-                    onTap: () {
-                  Geolocator.openAppSettings(); // no-op on web
-                }),
-              btn('BACK', const Color(0xFF6B7078), const Color(0xFF1B1D20),
-                  'back'),
+              const SizedBox(height: 12),
+              PressBlock(
+                color: Rb.blue,
+                edge: Rb.blueEdge,
+                depth: 5,
+                radius: 12,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                onTap: () => Navigator.of(c).pop(),
+                child: const SizedBox(
+                  width: double.infinity,
+                  child: Center(
+                      child: BlockText('GOT IT', size: 14, stroke: 3.5)),
+                ),
+              ),
             ],
           ),
         ),
       ),
     );
+  }
 
-    if (!mounted) return;
-    switch (choice) {
-      case 'nogps':
-        setState(() => _gpsStatus = 0); // timer-only: run is already going
-        break;
-      case 'retry':
-        await _attachGps();
-        break;
-      default:
-        _timer?.cancel();
-        _positionSub?.cancel();
-        setState(() => _phase = _Phase.preRun);
+  /// Location check screen: a loader while checking, then (if blocked)
+  /// the choices. Nothing is running yet.
+  Widget _buildLocating() {
+    if (_locBusy || _permIssue == null) {
+      return SafeArea(child: LoadingRunner(label: _locLabel));
     }
+    final forever = _permIssue == 'forever';
+    final msg = _permIssue == 'service'
+        ? 'Location services are turned off on this device.'
+        : forever
+            ? 'Location is blocked for HakbangHero. Turn it on in your '
+                '${kIsWeb ? 'browser / phone' : 'phone'} settings, then tap TRY AGAIN.'
+            : 'Location permission was not given.';
+
+    Widget btn(String label, Color c, Color e, VoidCallback onTap) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: PressBlock(
+            color: c,
+            edge: e,
+            depth: 5,
+            radius: 12,
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            onTap: onTap,
+            child: SizedBox(
+              width: double.infinity,
+              child: Center(child: BlockText(label, size: 14, stroke: 3.5)),
+            ),
+          ),
+        );
+
+    return SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Block(
+              color: Rb.slate,
+              edge: Rb.slateEdge,
+              depth: 6,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const BlockText('LOCATION NEEDED',
+                      size: 18, stroke: 4, align: TextAlign.center),
+                  const SizedBox(height: 8),
+                  Text(
+                    '$msg\n\nGPS measures your distance. The run has NOT '
+                    'started yet: pick an option below.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFFD7DADD),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                  if (_locTries > 1) ...[
+                    const SizedBox(height: 6),
+                    BlockText('STILL BLOCKED (TRIED $_locTries TIMES)',
+                        size: 10.5,
+                        stroke: 2.5,
+                        color: const Color(0xFFFFB4A8),
+                        align: TextAlign.center),
+                  ],
+                  const SizedBox(height: 6),
+                  btn('TRY AGAIN', Rb.blue, Rb.blueEdge, _checkLocation),
+                  if (forever || _permIssue == 'service')
+                    btn(kIsWeb ? 'HOW TO TURN ON' : 'OPEN SETTINGS', Rb.gold,
+                        Rb.goldEdge, () => _openLocationSettings(context)),
+                  btn('RUN WITHOUT GPS (TIMER ONLY)', Rb.green, Rb.greenEdge, () {
+                    setState(() {
+                      _useGps = false;
+                      _phase = _Phase.countdown;
+                    });
+                  }),
+                  btn('BACK', const Color(0xFF6B7078), const Color(0xFF1B1D20),
+                      _cancelStart),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   // ── START TRACKING ─────────────────────────────────────────────────────────
 
-  Future<void> _startTracking({bool useGps = true}) async {
-    _positionSub?.cancel();
+  Future<void> _startTracking() async {
+    final useGps = _useGps;
+    if (!useGps) {
+      _positionSub?.cancel();
+      _positionSub = null;
+    }
     _timer?.cancel();
 
     // Stage ranks fire their own events; Novice and Endless have none.
@@ -453,7 +627,13 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
       _lastPosition = null;
       _lastMoveAt = null;
-      _gpsStatus = useGps ? 1 : 0;
+      _activeSec = 0;
+      // the warm-up fix is the start point of the route
+      final a = _anchor;
+      if (useGps && a != null) {
+        _routePoints.add({'lat': a.latitude, 'lng': a.longitude});
+      }
+      _gpsStatus = !useGps ? 0 : (a == null ? 1 : (a.accuracy > 35 ? 2 : 3));
       _lastIntervalFast = null;
       _activeSeconds = 0;
       _fastKm.fillRange(0, _fastKm.length, 0.0);
@@ -466,107 +646,142 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       _summaryGhost = null;
     });
 
+    _startedAt = DateTime.now();
     _timer = Timer.periodic(
-      const Duration(seconds: 1),
+      const Duration(milliseconds: 500),
       (_) {
-        if (mounted) {
-          setState(() {
-            _elapsedSeconds++;
-            final m = _lastMoveAt;
-            if (m != null && DateTime.now().difference(m).inSeconds < 8) {
-              _activeSeconds++;
-            }
-          });
-          _tickChallenge();
-          _intervalCue();
-          _checkStageLimits();
-        }
+        if (!mounted || _startedAt == null) return;
+        // wall clock: correct even after the screen was locked
+        final e = DateTime.now().difference(_startedAt!).inSeconds;
+        if (e == _elapsedSeconds) return;
+        setState(() {
+          _elapsedSeconds = e;
+          _activeSeconds = math.min(_activeSec.round(), _elapsedSeconds);
+          if (!_isMoving) _currentSpeedKmh = 0; // stopped: speed reads 0
+        });
+        _tickChallenge();
+        _intervalCue();
+        _checkStageLimits();
       },
     );
-
-    if (!useGps) return; // timer-only run
-    await _attachGps();
   }
 
-  /// Ask for location AFTER the run is already going, so a slow or dismissed
-  /// permission prompt can never freeze the start.
-  Future<void> _attachGps() async {
-    final granted = await _requestPermission();
+  /// Best tracking settings per platform. Phone apps keep tracking with the
+  /// screen off (Android: foreground notification; iPhone: background mode).
+  LocationSettings _locationSettings() {
+    if (kIsWeb) {
+      return const LocationSettings(
+          accuracy: LocationAccuracy.best, distanceFilter: 0);
+    }
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return AndroidSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        distanceFilter: 0,
+        intervalDuration: const Duration(seconds: 1),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: 'HakbangHero is tracking your run',
+          notificationText: 'Distance keeps counting with the screen off.',
+          enableWakeLock: true,
+          setOngoing: true,
+        ),
+      );
+    }
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.bestForNavigation,
+        activityType: geo.ActivityType.fitness,
+        distanceFilter: 0,
+        pauseLocationUpdatesAutomatically: false,
+        allowBackgroundLocationUpdates: true,
+        showBackgroundLocationIndicator: true,
+      );
+    }
+    return const LocationSettings(
+        accuracy: LocationAccuracy.bestForNavigation, distanceFilter: 0);
+  }
+
+  /// Start listening to GPS (before the countdown, so the start point is
+  /// known). Fixes only COUNT once the run is tracking.
+  void _startGpsStream() {
+    _positionSub?.cancel();
+    _anchor = null;
+    _positionSub = Geolocator.getPositionStream(
+      locationSettings: _locationSettings(),
+    ).listen(
+      _onFix,
+      onError: (Object _) {
+        if (mounted && _phase == _Phase.tracking) {
+          _showSnack('GPS signal lost. The timer keeps running.');
+        }
+      },
+    );
+  }
+
+  /// One GPS reading.
+  ///  * jitter: a point closer than ~half its accuracy to the last COUNTED
+  ///    point is ignored, but the anchor stays put, so slow walking (1 m per
+  ///    reading) still adds up instead of being thrown away bit by bit.
+  ///  * gaps (screen locked): the whole gap counts if the speed was humanly
+  ///    possible; impossible jumps are dropped.
+  ///  * speed: the phone's value when it has one, else distance / time
+  ///    (Safari usually reports none).
+  void _onFix(Position pos) {
     if (!mounted) return;
-    if (!granted) {
-      await _onLocationBlocked();
+    final ff = _firstFix;
+    if (ff != null && !ff.isCompleted) ff.complete();
+
+    final st = pos.accuracy > 35 ? 2 : 3;
+    if (st != _gpsStatus && _phase == _Phase.tracking) {
+      setState(() => _gpsStatus = st);
+    }
+
+    // Anti-cheat: mock-location points are ignored, and so are points too
+    // inaccurate to trust (> 50 m).
+    if (pos.isMocked || pos.accuracy > 50) return;
+
+    final a = _anchor;
+    if (a == null || _phase != _Phase.tracking || _ending) {
+      _anchor = pos; // before the run: keep the freshest start point
       return;
     }
-    _positionSub?.cancel();
 
-    const locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.bestForNavigation,
-      distanceFilter: 5,
-    );
+    final meters = Geolocator.distanceBetween(
+        a.latitude, a.longitude, pos.latitude, pos.longitude);
+    final minMove = (pos.accuracy * 0.5).clamp(3.0, 15.0);
+    if (meters < minMove) return; // noise: keep the anchor
 
-    _positionSub = Geolocator.getPositionStream(
-      locationSettings: locationSettings,
-    ).listen(
-      (Position pos) {
-        if (!mounted) {
-          return;
-        }
+    final dt = pos.timestamp.difference(a.timestamp).inMilliseconds / 1000.0;
+    final secs = dt > 0.5 ? dt : 1.0;
+    final calcKmh = meters / secs * 3.6;
+    if (calcKmh > RunRewards.maxKmh + 5) {
+      _anchor = pos; // impossible on foot: a GPS jump, start again from here
+      return;
+    }
+    final reported = pos.speed * 3.6;
+    final speedKmh = (reported > 0.5 && reported <= RunRewards.maxKmh + 5
+            ? reported
+            : calcKmh)
+        .clamp(0.0, RunRewards.maxKmh);
+    final km = meters / 1000.0;
 
-        final st = pos.accuracy > 35 ? 2 : 3;
-        if (st != _gpsStatus) setState(() => _gpsStatus = st);
-
-        // Anti-cheat: points from a mock-location app are ignored completely,
-        // and so are points too inaccurate to trust (> 50 m).
-        if (pos.isMocked) return;
-        if (pos.accuracy > 50) return;
-
-        final speedKmh =
-            (pos.speed * 3.6).clamp(0.0, 60.0);
-
-        if (_lastPosition != null) {
-          final delta = Geolocator.distanceBetween(
-                _lastPosition!.latitude,
-                _lastPosition!.longitude,
-                pos.latitude,
-                pos.longitude,
-              ) /
-              1000.0;
-
-          // Ignore GPS noise and impossible jumps.
-          if (delta > 0.002 && delta < 0.05) {
-            setState(() {
-              _distanceKm += delta;
-              _lastMoveAt = DateTime.now();
-
-              _currentSpeedKmh = speedKmh;
-
-              if (speedKmh > _maxSpeedKmh) {
-                _maxSpeedKmh = speedKmh;
-              }
-
-              _speedSamples.add(speedKmh);
-
-              if (_mode.isInterval) {
-                final ph = RunMode.intervalAt(_elapsedSeconds);
-                if (ph != null && ph.fast) _fastKm[ph.round - 1] += delta;
-              }
-
-              _routePoints.add({
-                'lat': pos.latitude,
-                'lng': pos.longitude,
-              });
-            });
-            _tickChallenge();
-            _checkStageLimits();
-          }
-        }
-
-        _lastPosition = pos;
-      },
-      onError: (Object _) {
-        if (mounted) _showSnack('GPS signal lost. The timer keeps running.');
-      },
-    );
+    setState(() {
+      _distanceKm += km;
+      _lastMoveAt = DateTime.now();
+      _currentSpeedKmh = speedKmh;
+      if (speedKmh > _maxSpeedKmh) _maxSpeedKmh = speedKmh;
+      _speedSamples.add(speedKmh);
+      // moving time = the time between two counted points while walking+
+      if (calcKmh >= 1.5) _activeSec += secs;
+      if (_mode.isInterval) {
+        final ph = RunMode.intervalAt(_elapsedSeconds);
+        if (ph != null && ph.fast) _fastKm[ph.round - 1] += km;
+      }
+      _routePoints.add({'lat': pos.latitude, 'lng': pos.longitude});
+    });
+    _anchor = pos;
+    _lastPosition = pos;
+    _tickChallenge();
+    _checkStageLimits();
   }
 
   /// Feed the challenge engine: once a second and after each accepted GPS fix.
@@ -644,7 +859,14 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
   Future<void> _stopAndSave() async {
     _positionSub?.cancel();
+    _positionSub = null;
     _timer?.cancel();
+    final st = _startedAt;
+    if (st != null) {
+      _elapsedSeconds = DateTime.now().difference(st).inSeconds;
+    }
+    _activeSeconds = math.min(_activeSec.round(), _elapsedSeconds);
+    _anchor = null;
     ChallengeAudio.instance.stop();
 
     // Sudden-quest rewards. A challenge still running when the player
@@ -766,6 +988,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     }
 
     _savedOffline = false;
+    _saveError = null;
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       final fields = session.toFirestore()
@@ -789,8 +1012,12 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         elapsedSeconds: _elapsedSeconds,
         interval: interval,
       );
+      // cloud copy first: the run is safe on the account even if this
+      // device never manages to finish the save
+      RunCloud.stash(payload);
       try {
         final r = await RunSaver.save(payload).timeout(RunSaver.timeout);
+        RunCloud.done(user.uid, payload.id);
         _newlyCompletedQuests = r.completedQuests;
         _stageStars = _mode.isTrial ? 0 : r.stars;
         _stageBonusCoins = r.bonusCoins;
@@ -800,9 +1027,12 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         // connection is fine: also send any run that was waiting
         RunOutbox.flush(user.uid);
       } catch (e) {
-        // Offline or too slow: keep the run on the phone, send it later.
+        // Offline, too slow or refused: keep the run on the phone, send it
+        // later, and SAY WHY on the summary (never fail silently).
         debugPrint('Run saved to outbox: $e');
         _savedOffline = true;
+        _saveError = RunSaver.describe(e);
+        RunOutbox.lastError.value = _saveError;
         await RunOutbox.enqueue(payload);
         if (_mode.isStage && _outcomeGood) {
           _stageStars = _mode.isTrial ? 0 : _mode.starsFor(_elapsedSeconds);
@@ -850,6 +1080,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         session: session,
         isSaving: _isSaving,
         queued: _savedOffline,
+        saveError: _saveError,
         intervalStats: _intervalStats,
         intervalNewBest: _intervalNewBest,
         completedQuests:
@@ -871,6 +1102,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
 
   bool _tutorialLaunching = false;
   bool _savedOffline = false;
+  String? _saveError;
 
 
   /// DONE on the Session Summary.
@@ -923,6 +1155,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         _elapsedSeconds = 0;
         _ending = false;
         _lastPosition = null;
+        _anchor = null;
+        _startedAt = null;
+        _activeSec = 0;
         _speedSamples.clear();
         _routePoints.clear();
       });
@@ -977,12 +1212,14 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
               _phase = _mode.isStage ? _Phase.briefing : _Phase.preRun),
         );
 
+      case _Phase.locating:
+        return _buildLocating();
+
       case _Phase.countdown:
         return RunCountdown(
           modeName: _mode.name,
           onDone: () => _startTracking(),
-          onCancel: () => setState(() =>
-              _phase = _mode.isStage ? _Phase.briefing : _Phase.preRun),
+          onCancel: _cancelStart,
         );
 
       case _Phase.briefing:
@@ -1042,6 +1279,7 @@ enum _Phase {
   preRun,
   briefing,
   warmUp,
+  locating, // permission + first GPS fix, before anything starts
   countdown,
   tracking,
   summary,

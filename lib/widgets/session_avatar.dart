@@ -95,7 +95,10 @@ class _SessionAvatarState extends State<SessionAvatar>
             child: Padding(
               padding: const EdgeInsets.only(top: 44),
               child: HeroStill(
-                  heroId: hero, tier: form.tier, outfit: outfitOf(data)),
+                  heroId: hero,
+                  tier: form.tier,
+                  outfit: outfitOf(data),
+                  girl: genderKey(data?['gender']) == 'female'),
             ),
           ),
         ),

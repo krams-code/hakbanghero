@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../constants/app_icons.dart';
+import '../../models/hero_roster.dart' show genderKey;
 import '../../widgets/block_ui.dart';
 import '../../widgets/pixel_icon.dart';
 import '../../widgets/hero_sprite.dart';
@@ -65,19 +66,39 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       .map((d) => _LeaderboardEntry.fromDoc(d))
                       .toList();
 
+                  // heroes who never picked BOY / GIRL (old or Google accounts)
+                  final unknown =
+                      entries.where((e) => genderKey(e.gender) == null).length;
                   if (_genderFilter != 'all') {
-                    entries =
-                        entries.where((e) => e.gender == _genderFilter).toList();
+                    entries = entries
+                        .where((e) => genderKey(e.gender) == _genderFilter)
+                        .toList();
                   }
+                  final note = _genderFilter != 'all' && unknown > 0
+                      ? '$unknown hero${unknown == 1 ? '' : 'es'} on GLOBAL '
+                          "haven't picked BOY or GIRL yet."
+                      : null;
                   if (entries.isEmpty) {
-                    return _emptyNote('No heroes match this filter yet.');
+                    return _emptyNote(note ?? 'No heroes match this filter yet.');
                   }
 
                   return ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: entries.length,
-                    itemBuilder: (context, i) =>
-                        _buildRow(i + 1, entries[i], entries[i].uid == myUid),
+                    itemCount: entries.length + (note == null ? 0 : 1),
+                    itemBuilder: (context, i) {
+                      if (note != null && i == entries.length) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(note,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  color: Colors.white54,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800)),
+                        );
+                      }
+                      return _buildRow(i + 1, entries[i], entries[i].uid == myUid);
+                    },
                   );
                 },
               ),
