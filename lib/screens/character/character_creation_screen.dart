@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:hakbanghero/services/private_data.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'hero_picker_screen.dart' show saveErrorText;
@@ -225,12 +226,16 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
 
     try {
       final fields = profile.toFirestore();
+      // height / weight are private: never on the public user doc
+      final body = <String, dynamic>{
+        'height_cm': fields.remove('height_cm'),
+        'weight_kg': fields.remove('weight_kg'),
+      };
       if (widget.isEditMode) {
         // weight and height only change through the weekly check-in
-        fields
-          ..remove('height_cm')
-          ..remove('weight_kg')
-          ..remove('body_tier');
+        fields.remove('body_tier');
+      } else {
+        await PrivateData.ref(uid).set(body, SetOptions(merge: true));
       }
       await FirebaseFirestore.instance.collection('users').doc(uid).update({
         ...fields,
@@ -249,7 +254,7 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
           TutorialProgress.firstRunField: false,
         },
       });
-      if (!widget.isEditMode && fields['weight_kg'] is num) {
+      if (!widget.isEditMode && body['weight_kg'] is num) {
         // first point of the weight chart (best effort)
         FirebaseFirestore.instance
             .collection('users')
@@ -257,8 +262,8 @@ class _CharacterCreationScreenState extends State<CharacterCreationScreen> {
             .collection('weight_checkins')
             .add({
           'at': FieldValue.serverTimestamp(),
-          'height_cm': fields['height_cm'],
-          'weight_kg': fields['weight_kg'],
+          'height_cm': body['height_cm'],
+          'weight_kg': body['weight_kg'],
         }).catchError((_) => FirebaseFirestore.instance.collection('users').doc(uid));
       }
 

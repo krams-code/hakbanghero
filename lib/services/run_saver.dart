@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/daily_quest_definitions.dart';
 import '../models/run_mode.dart';
+import '../utils/route_splits.dart';
 import 'friends_service.dart';
 
 /// Everything needed to save one finished run. Plain JSON, so it can sit in
@@ -108,6 +109,10 @@ class RunSaveResult {
   /// True when this run had already been saved before (nothing was written).
   final bool duplicate;
 
+  /// The run overlaps a run already counted (e.g. it reached the server late
+  /// from another phone): the record is kept, without rewards.
+  final bool late;
+
   /// Interval Run: this run beat the player's best FAST pace.
   final bool intervalNewBest;
 
@@ -118,6 +123,7 @@ class RunSaveResult {
     this.firstClear = false,
     this.unlockedRank,
     this.duplicate = false,
+    this.late = false,
     this.intervalNewBest = false,
   });
 }
@@ -126,6 +132,16 @@ class RunSaveResult {
 /// player totals, daily quests and the stage record all land together or not
 /// at all. If it cannot finish (offline, slow network) the run goes into the
 /// on-phone outbox and is re-sent later by [RunOutbox.flush].
+List<Map<String, double>> _route(Object? raw) => [
+      if (raw is List)
+        for (final p in raw)
+          if (p is Map)
+            {
+              for (final e in p.entries)
+                if (e.value is num) e.key.toString(): (e.value as num).toDouble(),
+            },
+    ];
+
 abstract final class RunSaver {
   // Mobile data / Safari can be slow to open the first connection.
   static const Duration timeout = Duration(seconds: 30);
@@ -147,16 +163,32 @@ abstract final class RunSaver {
       const {'permission-denied', 'invalid-argument', 'failed-precondition'}
           .contains(e.code);
 
-  static String todayString() {
-    final n = DateTime.now();
-    return '${n.year}-${n.month.toString().padLeft(2, '0')}-'
-        '${n.day.toString().padLeft(2, '0')}';
-  }
+  static String todayString() => dayString(DateTime.now());
+
+  static String dayString(DateTime n) =>
+      '${n.year}-${n.month.toString().padLeft(2, '0')}-'
+      '${n.day.toString().padLeft(2, '0')}';
 
   /// Day number used by the daily coin cap (Manila time, UTC+8). The security
   /// rules compute the same number from the server clock.
   static int coinDay() =>
       (DateTime.now().millisecondsSinceEpoch + 28800000) ~/ 86400000;
+
+  /// Calendar week number (weeks start Monday, Manila time). The security
+  /// rules compute the same number: one weekly-goal claim per week.
+  static int weekIdx() => (coinDay() + 3) ~/ 7;
+
+  /// Most coins runs + duels may add per day (the security rules enforce the
+  /// same number).
+  static const int dailyCoinCap = 12000;
+
+  /// [coins], cut down to what is left of today's cap (never refused).
+  static int capToday(Map<String, dynamic> data, int coins) {
+    final day = coinDay();
+    final same = (data['coins_today_day'] as num?)?.toInt() == day;
+    final before = same ? ((data['coins_today'] as num?)?.toInt() ?? 0) : 0;
+    return coins.clamp(0, math.max(0, dailyCoinCap - before)).toInt();
+  }
 
   /// `coins_today` bookkeeping for the daily coin cap, to merge into the
   /// user update that adds [addCoins].
@@ -178,6 +210,9 @@ abstract final class RunSaver {
     final endMs = (p.fields['endTime'] as num).toInt();
     final startHour = DateTime.fromMillisecondsSinceEpoch(startMs).hour;
     final today = todayString();
+    // the day the run happened (a run synced the next morning still counts
+    // for the day it was run, not for today's quests)
+    final runDay = dayString(DateTime.fromMillisecondsSinceEpoch(startMs));
 
     var result = const RunSaveResult();
 
@@ -193,6 +228,25 @@ abstract final class RunSaver {
       final snap = await txn.get(userRef);
       final data = snap.data() ?? <String, dynamic>{};
 
+      // Runs can't overlap in time (the rules check this too). A run that
+      // starts before the last counted run ended arrived late, e.g. from
+      // another phone: keep the record so nothing disappears, no rewards.
+      final lastEnd =
+          (data['last_run_end'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+      if (startMs < lastEnd - 120000) {
+        txn.set(actRef, {
+          ...p.fields,
+          'startTime': Timestamp.fromMillisecondsSinceEpoch(startMs),
+          'endTime': Timestamp.fromMillisecondsSinceEpoch(endMs),
+          'xpEarned': 0,
+          'coinsEarned': 0,
+          'mode': p.modeId,
+          'late': true,
+        });
+        result = const RunSaveResult(late: true);
+        return;
+      }
+
       final storedDate = data['daily_progress_date'] as String? ?? '';
       var dailyKm = (data['daily_progress_km'] as num?)?.toDouble() ?? 0.0;
       var claimed = Map<String, dynamic>.from(
@@ -201,11 +255,13 @@ abstract final class RunSaver {
         dailyKm = 0.0;
         claimed = {};
       }
-      dailyKm += km;
+      // only a run from TODAY moves today's quests
+      final countsToday = runDay == today;
+      if (countsToday) dailyKm += km;
 
       var coins = 0; // quest + stage bonus coins
       final done = <DailyQuest>[];
-      for (final q in kDailyQuests) {
+      for (final q in countsToday ? kDailyQuests : const <DailyQuest>[]) {
         if (claimed[q.id] == true) continue;
         if (q.beforeHour != null && startHour >= q.beforeHour!) continue;
         if (dailyKm >= q.thresholdKm) {
@@ -262,7 +318,9 @@ abstract final class RunSaver {
 
       final fields = Map<String, dynamic>.from(p.fields)
         ..['startTime'] = Timestamp.fromMillisecondsSinceEpoch(startMs)
-        ..['endTime'] = Timestamp.fromMillisecondsSinceEpoch(endMs);
+        ..['endTime'] = Timestamp.fromMillisecondsSinceEpoch(endMs)
+        // same shape at a fraction of the size (fast Activity list)
+        ..['routePoints'] = simplifyRoute(_route(p.fields['routePoints']));
 
       txn.set(actRef, {
         ...fields,
@@ -275,15 +333,18 @@ abstract final class RunSaver {
       });
 
       final extraCoins = p.bonusCoins + coins;
+      final addCoins = capToday(data, p.coins + extraCoins);
       txn.update(userRef, {
         'total_km': FieldValue.increment(km),
         'total_sessions': FieldValue.increment(1),
         // Security rules read this to find the run record that justifies the
         // reward (rewards can never exceed what that record shows).
         'last_run_id': p.id,
+        // where the next run may start (rules: runs never overlap)
+        'last_run_end': Timestamp.fromMillisecondsSinceEpoch(endMs),
         'xp': FieldValue.increment(p.xp),
-        'coins': FieldValue.increment(p.coins + extraCoins),
-        ...coinsTodayFields(data, p.coins + extraCoins),
+        'coins': FieldValue.increment(addCoins),
+        ...coinsTodayFields(data, addCoins),
         if (p.lootChests > 0) 'loot_chests': FieldValue.increment(p.lootChests),
         'daily_progress_km': dailyKm,
         'daily_progress_date': today,

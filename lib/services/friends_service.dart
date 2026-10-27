@@ -1,6 +1,7 @@
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/weekly.dart';
+import 'run_saver.dart';
 
 /// Outcome of looking a friend code up (step 1 of adding a friend).
 enum LookupStatus { found, notFound, self, already, pending, error }
@@ -282,6 +283,45 @@ class FriendsService {
         'seen.$me': FieldValue.serverTimestamp(),
       });
 
+  /// A win by default (opponent left / went silent) pays only the share of
+  /// the race you actually ran, and nothing under [minPrizeKm]. This stops
+  /// "free" prizes from a partner who just closes the app.
+  static const double minPrizeKm = 0.2;
+
+  static int prizeFor(Map<String, dynamic> d, double myKm,
+      {required bool finished}) {
+    final reward = (d['reward'] as num?)?.toInt() ?? 0;
+    if (finished) return reward;
+    final dist = (d['distance_km'] as num?)?.toDouble() ?? 1;
+    if (myKm < minPrizeKm || dist <= 0) return 0;
+    return (reward * (myKm / dist).clamp(0.0, 1.0)).floor();
+  }
+
+  /// Writes the result + pays the prize (within the daily coin cap).
+  static Future<void> _payWin(Transaction txn, DocumentSnapshot<Map<String, dynamic>> ch,
+      String me, double km, {required bool finished}) async {
+    final d = ch.data()!;
+    final u = await txn.get(user(me));
+    final ud = u.data() ?? <String, dynamic>{};
+    final prize =
+        RunSaver.capToday(ud, prizeFor(d, km, finished: finished));
+    txn.update(ch.reference, {
+      'status': 'done',
+      'winner': me,
+      'finished_at': FieldValue.serverTimestamp(),
+      'progress.$me': double.parse(km.toStringAsFixed(3)),
+      'prize': prize,
+      if (!finished) 'by_default': true,
+    });
+    if (prize > 0) {
+      txn.update(user(me), {
+        'coins': FieldValue.increment(prize),
+        ...RunSaver.coinsTodayFields(ud, prize),
+        'last_duel_id': ch.id, // rules check the prize against this challenge
+      });
+    }
+  }
+
   /// I reached the distance. True only for the FIRST finisher.
   static Future<bool> claimFinish(String id, String me, double km) async {
     var won = false;
@@ -289,16 +329,7 @@ class FriendsService {
       final s = await txn.get(challenges.doc(id));
       final d = s.data();
       if (d == null || d['status'] != 'active') return;
-      txn.update(s.reference, {
-        'status': 'done',
-        'winner': me,
-        'finished_at': FieldValue.serverTimestamp(),
-        'progress.$me': double.parse(km.toStringAsFixed(3)),
-      });
-      txn.update(user(me), {
-        'coins': FieldValue.increment((d['reward'] as num).toInt()),
-        'last_duel_id': id, // rules check the prize against this challenge
-      });
+      await _payWin(txn, s, me, km, finished: true);
       won = true;
     });
     return won;
@@ -317,8 +348,9 @@ class FriendsService {
     });
   }
 
-  /// The opponent forfeited or went silent: take the win.
-  static Future<bool> claimWin(String id, String me) async {
+  /// The opponent forfeited or went silent: take the win. The prize is the
+  /// share of the distance I covered ([km]).
+  static Future<bool> claimWin(String id, String me, double km) async {
     var won = false;
     await _db.runTransaction((txn) async {
       final s = await txn.get(challenges.doc(id));
@@ -326,16 +358,9 @@ class FriendsService {
       if (d == null) return;
       final st = d['status'];
       if (st != 'forfeit' && st != 'active') return;
-      txn.update(s.reference, {
-        'status': 'done',
-        'winner': me,
-        'finished_at': FieldValue.serverTimestamp(),
-        'by_default': true,
-      });
-      txn.update(user(me), {
-        'coins': FieldValue.increment((d['reward'] as num).toInt()),
-        'last_duel_id': id,
-      });
+      if (st == 'forfeit' && d['forfeit_by'] == me) return;
+      final dist = (d['distance_km'] as num?)?.toDouble() ?? 0;
+      await _payWin(txn, s, me, km, finished: dist > 0 && km >= dist);
       won = true;
     });
     return won;
@@ -346,12 +371,19 @@ class FriendsService {
   /// Fields to merge into the user doc when a run of [km] is saved.
   /// [userData] is the doc as read inside the same transaction.
   static Map<String, dynamic> weekFields(Map<String, dynamic> userData, double km) {
-    final key = Weekly.key(DateTime.now());
+    final now = DateTime.now();
+    final key = Weekly.key(now);
     final same = userData['week_key'] == key;
     final prev = same ? ((userData['week_km'] as num?)?.toDouble() ?? 0) : 0.0;
+    // monthly leaderboard
+    final mKey = '${now.year}-${now.month.toString().padLeft(2, '0')}';
+    final mSame = userData['month_key'] == mKey;
+    final mPrev = mSame ? ((userData['month_km'] as num?)?.toDouble() ?? 0) : 0.0;
     return {
       'week_key': key,
       'week_km': double.parse((prev + km).toStringAsFixed(3)),
+      'month_key': mKey,
+      'month_km': double.parse((mPrev + km).toStringAsFixed(3)),
       'last_run_at': FieldValue.serverTimestamp(),
     };
   }

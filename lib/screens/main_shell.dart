@@ -1,4 +1,6 @@
 import '../services/sound.dart';
+import 'package:hakbanghero/services/usernames.dart';
+import 'package:hakbanghero/services/private_data.dart';
 import '../services/presence.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -80,6 +82,9 @@ class _MainShellState extends State<MainShell> {
       await _maybeChooseHero();
       await _maybeStartTutorial();
       await _migrateCrystals();
+      final me = FirebaseAuth.instance.currentUser;
+      if (me != null) await PrivateData.migrate(me.uid);
+      if (me != null) await Usernames.claimExisting(me.uid);
       await _maybeWeeklyCheckIn();
     });
   }
@@ -316,7 +321,17 @@ class _MainShellState extends State<MainShell> {
     // module has its own header, and it is hidden mid-run so nothing can
     // interrupt tracking.
     final showTopBar = !_isTrackingActive && _currentIndex == 2;
-    return Scaffold(
+    return PopScope(
+      // Mid-run the back button must not close the app: the run would
+      // be lost. The run only ends with the HOLD-to-end button.
+      canPop: !_isTrackingActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _isTrackingActive) {
+          blockSnack(context,
+              'Use the buttons on screen. To finish a run, HOLD the END button.');
+        }
+      },
+      child: Scaffold(
       backgroundColor: Rb.bg,
       body: Column(
         children: [
@@ -352,6 +367,7 @@ class _MainShellState extends State<MainShell> {
                 onTap: _navigateTo,
               ),
       ),
+    ),
     );
   }
 }

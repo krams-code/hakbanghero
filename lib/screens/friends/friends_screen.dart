@@ -347,7 +347,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
     PresenceStatus st = PresenceStatus.offline;
     String? seen;
     try {
-      final snap = await FriendsService.user(uid).get(const GetOptions(source: Source.server));
+      final snap = await Presence.doc(uid).get(const GetOptions(source: Source.server));
       st = Presence.statusOf(snap.data());
       seen = Presence.lastSeen(snap.data());
     } catch (_) {}
@@ -1184,7 +1184,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
             card(Rb.slate, Rb.slateEdge, [
               BlockText(
                 d.data()['winner'] == _me
-                    ? '\u{1F3C6} You beat ${other(d)} — +\u{1FA99}${d.data()['reward']}'
+                    ? '\u{1F3C6} You beat ${other(d)} — +\u{1FA99}${d.data()['prize'] ?? d.data()['reward']}'
                     : d.data()['status'] == 'forfeit'
                         ? '${other(d)} left the race'
                         : '${other(d)} won this duel (${d.data()['distance_km']} km)',

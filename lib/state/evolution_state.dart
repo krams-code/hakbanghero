@@ -8,6 +8,7 @@ import 'package:flutter/widgets.dart';
 
 import '../models/body_composition.dart';
 import '../models/character_profile.dart';
+import '../services/private_data.dart';
 
 /// What happened when the player locked in a check-in.
 class EvolutionResult {
@@ -61,6 +62,9 @@ class EvolutionState {
   Map<String, dynamic> _data = const <String, dynamic>{};
   StreamSubscription<User?>? _authSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _docSub;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _privSub;
+  Map<String, dynamic> _pub = const <String, dynamic>{};
+  Map<String, dynamic> _priv = const <String, dynamic>{};
 
   /// uid of the signed-in player (null when signed out / not started).
   String? get uid => _uid;
@@ -90,6 +94,10 @@ class EvolutionState {
   void _bind(User? user) {
     _docSub?.cancel();
     _docSub = null;
+    _privSub?.cancel();
+    _privSub = null;
+    _pub = const <String, dynamic>{};
+    _priv = const <String, dynamic>{};
     _uid = user?.uid;
     if (user == null) {
       _data = const <String, dynamic>{};
@@ -101,10 +109,20 @@ class EvolutionState {
         .doc(user.uid)
         .snapshots()
         .listen(_onDoc, onError: (Object _) {});
+    // height / weight live in the owner-only private doc
+    _privSub = PrivateData.ref(user.uid).snapshots().listen((s) {
+      _priv = s.data() ?? const <String, dynamic>{};
+      _merge();
+    }, onError: (Object _) {});
   }
 
   void _onDoc(DocumentSnapshot<Map<String, dynamic>> snap) {
-    final d = snap.data() ?? const <String, dynamic>{};
+    _pub = snap.data() ?? const <String, dynamic>{};
+    _merge();
+  }
+
+  void _merge() {
+    final d = <String, dynamic>{..._pub, ..._priv};
     _data = d;
     composition.value = compositionFromData(d);
   }
@@ -214,14 +232,17 @@ class EvolutionState {
     //    so streams (Home, Leaderboard, ...) agree immediately as well.
     final ref = FirebaseFirestore.instance.collection('users').doc(uid);
     try {
-      await ref.update({
-        'height_cm': heightCm,
-        'weight_kg': weightKg,
+      final batch = FirebaseFirestore.instance.batch();
+      // height / weight are private (owner only); the form is public
+      batch.set(PrivateData.ref(uid), {'height_cm': heightCm, 'weight_kg': weightKg},
+          SetOptions(merge: true));
+      batch.update(ref, {
         'body_tier': after.tier.id,
         'best_composition_rank': math.min(bestRank, after.distanceFromNormal),
         'last_checkin_at': FieldValue.serverTimestamp(),
         if (award) 'endurance_bonus': FieldValue.increment(enduranceBonus),
-      }).timeout(
+      });
+      await batch.commit().timeout(
         // Offline: the write is queued and syncs later. Don't hang the
         // dialog on a server ack that may be minutes away.
         const Duration(seconds: 6),

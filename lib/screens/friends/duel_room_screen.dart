@@ -8,6 +8,8 @@ import 'package:geolocator/geolocator.dart' hide ActivityType;
 import '../../models/activity_model.dart';
 import '../../services/friends_service.dart';
 import '../../services/run_saver.dart';
+import '../../services/run_checkpoint.dart' show ScreenAwake;
+import '../../services/run_gps.dart';
 import '../../utils/rewards.dart';
 import '../../widgets/block_ui.dart';
 import '../../widgets/hero_bust.dart';
@@ -81,6 +83,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
 
   @override
   void dispose() {
+    ScreenAwake.off();
     _chSub?.cancel();
     _countTimer?.cancel();
     _tick?.cancel();
@@ -153,7 +156,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
         _onDone(d);
       case 'forfeit':
         if (d['forfeit_by'] != _me) {
-          FriendsService.claimWin(widget.challengeId, _me).catchError((_) => false);
+          FriendsService.claimWin(widget.challengeId, _me, _km).catchError((_) => false);
         }
       case 'cancelled':
       case 'declined':
@@ -243,18 +246,21 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
     _racing = true;
     _count = null;
     _km = resume ? _progressOf(_me) : 0;
-    _raceStart = DateTime.now();
     final started = (_ch?['started_at'] as Timestamp?)?.toDate();
-    _secs = resume && started != null
-        ? DateTime.now().difference(started).inSeconds.clamp(0, 86400).toInt()
-        : 0;
+    // wall clock from the real start: a locked screen / slow timer loses nothing
+    _raceStart = resume && started != null ? started : DateTime.now();
+    _secs = DateTime.now().difference(_raceStart!).inSeconds.clamp(0, 86400).toInt();
     _last = null;
+    ScreenAwake.on(); // the web (iPhone) stops GPS when the screen locks
 
+    var lastPush = -1;
     _tick?.cancel();
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _secs++);
-      if (_secs % 3 == 0 && !_post) {
+    _tick = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (!mounted || _raceStart == null) return;
+      final e = DateTime.now().difference(_raceStart!).inSeconds;
+      if (e != _secs) setState(() => _secs = e);
+      if (e ~/ 3 != lastPush && !_post) {
+        lastPush = e ~/ 3;
         FriendsService.pushProgress(widget.challengeId, _me, _km).catchError((_) {});
       }
       _checkFinish();
@@ -262,10 +268,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
 
     _posSub?.cancel();
     _posSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 3,
-      ),
+      locationSettings: runLocationSettings(),
     ).listen(_onPosition, onError: (_) {
       if (mounted) setState(() => _locError = 'GPS signal lost. Keep moving, it should come back.');
     });
@@ -280,28 +283,39 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
     }
     if (pos.accuracy > _maxAccuracyM) return; // poor fix, just wait for a better one
 
-    final prev = _last;
-    _last = pos;
-    if (prev == null) return;
-
-    final deltaKm = Geolocator.distanceBetween(
-            prev.latitude, prev.longitude, pos.latitude, pos.longitude) /
-        1000.0;
-    final dtH = pos.timestamp.difference(prev.timestamp).inMilliseconds / 3.6e6;
-    if (deltaKm < 0.002) return; // standing still / noise
-    if (dtH <= 0) return;
-    final speed = deltaKm / dtH;
+    // Same jitter filter as solo runs: GPS wander while standing still must
+    // not add distance. The anchor only moves when a move is COUNTED.
+    final a = _last;
+    if (a == null) {
+      _last = pos;
+      return;
+    }
+    final meters = Geolocator.distanceBetween(
+        a.latitude, a.longitude, pos.latitude, pos.longitude);
+    if (meters < minCountedMove(pos.accuracy)) return; // noise: keep anchor
+    final dt = pos.timestamp.difference(a.timestamp).inMilliseconds / 1000.0;
+    final secs = dt > 0.5 ? dt : 1.0;
+    final speed = meters / secs * 3.6;
     if (speed > _maxSpeedKmh) {
+      _last = pos; // a jump: start again from here, nothing counted
       _flag('Moving too fast to be running');
       return;
     }
+    final deltaKm = meters / 1000.0;
+    final t0 = _raceStart;
 
     setState(() {
       _locError = null;
       _km += deltaKm;
       if (speed > _topSpeed) _topSpeed = speed;
-      _route.add({'lat': pos.latitude, 'lng': pos.longitude});
+      _route.add({
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        if (t0 != null)
+          't': (DateTime.now().difference(t0).inMilliseconds / 100).round() / 10,
+      });
     });
+    _last = pos;
     _checkFinish();
   }
 
@@ -334,6 +348,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
     _countTimer?.cancel();
     final won = d['winner'] == _me;
     final byDefault = d['by_default'] == true;
+    final prize = (d['prize'] as num?)?.toInt() ?? _reward;
 
     // tracking only runs if we were actually racing
     if (!_racing) {
@@ -366,7 +381,9 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
                 BlockText(
                   won
                       ? (byDefault
-                          ? '$_otherName left the race — you win by default!'
+                          ? '$_otherName left the race — you win by default!\n'
+                              'Prize = the part of the race you ran'
+                              '${prize == 0 ? ' (run at least ${(FriendsService.minPrizeKm * 1000).round()} m to earn coins)' : ''}.'
                           : 'You reached ${_target.toStringAsFixed(0)} km first!')
                       : 'They reached ${_target.toStringAsFixed(0)} km first.\nYou are at ${_km.toStringAsFixed(2)} km — keep running, finish your distance!',
                   size: 12,
@@ -375,7 +392,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
                 ),
                 if (won) ...[
                   const SizedBox(height: 10),
-                  BlockText('+\u{1FA99}$_reward', size: 22, stroke: 5, color: Rb.neon),
+                  BlockText('+\u{1FA99}$prize', size: 22, stroke: 5, color: Rb.neon),
                 ],
                 const SizedBox(height: 16),
                 if (!byDefault || !won)
@@ -443,6 +460,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
   /// Save what was run (also the loser's "keep running" distance).
   Future<void> _finishAndSave() async {
     if (_saving) return;
+    ScreenAwake.off();
     setState(() => _saving = true);
     _tick?.cancel();
     _posSub?.cancel();
@@ -470,32 +488,41 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
           coinsEarned: coins,
           routePoints: _route,
         );
-        final db = FirebaseFirestore.instance;
-        final userRef = FriendsService.user(uid);
-        // Activity + rewards in ONE transaction with a fixed id: it can't be
-        // saved twice, and the security rules can check the reward against
-        // this run record.
+        // Saved like a solo run: fixed id (never twice), a cloud copy, and
+        // the on-phone queue when offline, so a duel run is never lost.
         final runId = 'duel_${widget.challengeId}';
-        final actRef = userRef.collection('activities').doc(runId);
-        await db.runTransaction((txn) async {
-          final done = await txn.get(actRef);
-          if (done.exists) return;
-          final snap = await txn.get(userRef);
-          txn.set(actRef, {
-            ...session.toFirestore(),
-            'duel_id': widget.challengeId,
-          });
-          txn.update(userRef, {
-            'total_km': FieldValue.increment(session.distanceKm),
-            'total_sessions': FieldValue.increment(1),
-            'xp': FieldValue.increment(xp),
-            'coins': FieldValue.increment(coins),
-            ...RunSaver.coinsTodayFields(snap.data() ?? {}, coins),
-            'last_run_id': runId,
-            ...FriendsService.weekFields(snap.data() ?? {}, session.distanceKm),
-          });
-        });
-        summary = '${_km.toStringAsFixed(2)} km saved  •  +$xp XP';
+        final fields = session.toFirestore()
+          ..['activeSeconds'] = _secs
+          ..['startTime'] = session.startTime.millisecondsSinceEpoch
+          ..['endTime'] = session.endTime.millisecondsSinceEpoch
+          ..['duel_id'] = widget.challengeId;
+        final payload = RunPayload(
+          id: runId,
+          uid: uid,
+          modeId: 'duel',
+          outcome: null,
+          good: false,
+          rewardMult: 1.0,
+          fields: fields,
+          challenges: const [],
+          ghost: null,
+          xp: xp,
+          coins: coins,
+          bonusCoins: 0,
+          lootChests: 0,
+          elapsedSeconds: _secs,
+        );
+        RunCloud.stash(payload);
+        try {
+          await RunSaver.save(payload).timeout(RunSaver.timeout);
+          RunCloud.done(uid, runId);
+          summary = '${_km.toStringAsFixed(2)} km saved  •  +$xp XP';
+        } catch (e) {
+          await RunOutbox.enqueue(payload);
+          summary = RunSaver.isRejected(e)
+              ? 'Run kept on your phone (${RunSaver.describe(e)}).'
+              : 'No connection: the run is kept on your phone and sends by itself later.';
+        }
       } catch (_) {
         summary = 'Could not save this run. Check your connection.';
       }
@@ -1022,7 +1049,7 @@ class _DuelRoomScreenState extends State<DuelRoomScreen> {
                         depth: 4,
                         radius: 10,
                         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
-                        onTap: () => FriendsService.claimWin(widget.challengeId, _me)
+                        onTap: () => FriendsService.claimWin(widget.challengeId, _me, _km)
                             .catchError((_) => false),
                         child: const BlockText('CLAIM WIN', size: 13, stroke: 3.5),
                       ),

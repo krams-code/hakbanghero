@@ -8,10 +8,13 @@ enum PresenceStatus { online, idle, offline }
 
 /// Who is around right now.
 ///
-///   users/{uid}.presence     'online' | 'idle' | 'offline'
-///   users/{uid}.presence_at  server time of the last heartbeat
+///   presence/{uid}.presence     'online' | 'idle' | 'offline'
+///   presence/{uid}.presence_at  server time of the last heartbeat
 ///
-/// The app writes a heartbeat every 30 s. A player is
+/// A small doc of its own (not the big user doc): heartbeats then don't make
+/// every leaderboard / friend list re-download whole profiles.
+///
+/// The app writes a heartbeat every 60 s. A player is
 ///   * ONLINE  (green)  - app open and touched in the last 3 minutes
 ///                         (a run in progress always counts as online),
 ///   * IDLE    (orange) - app open but no touch for 3 minutes,
@@ -22,9 +25,12 @@ class Presence with WidgetsBindingObserver {
   Presence._();
   static final Presence I = Presence._();
 
-  static const Duration beat = Duration(seconds: 30);
+  static const Duration beat = Duration(seconds: 60);
   static const Duration idleAfter = Duration(minutes: 3);
-  static const Duration staleAfter = Duration(seconds: 100);
+  static const Duration staleAfter = Duration(seconds: 150);
+
+  static DocumentReference<Map<String, dynamic>> doc(String uid) =>
+      FirebaseFirestore.instance.collection('presence').doc(uid);
 
   /// Settings switch: toast when a friend comes online.
   final ValueNotifier<bool> friendAlerts = ValueNotifier<bool>(true);
@@ -114,7 +120,7 @@ class Presence with WidgetsBindingObserver {
 
   Future<void> _write(String uid, String s) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      await doc(uid).set({
         'presence': s,
         'presence_at': FieldValue.serverTimestamp(),
       });
@@ -251,11 +257,7 @@ class _PresenceBuilderState extends State<PresenceBuilder> {
 
   void _listen() {
     _sub?.cancel();
-    _sub = FirebaseFirestore.instance
-        .collection('users')
-        .doc(widget.uid)
-        .snapshots()
-        .listen((s) {
+    _sub = Presence.doc(widget.uid).snapshots().listen((s) {
       if (mounted) setState(() => _data = s.data());
     }, onError: (_) {});
   }
@@ -311,11 +313,7 @@ class FriendWatcher {
       for (final d in snap.docs) {
         _names[d.id] = (d.data()['name'] as String?) ?? 'A friend';
         if (_subs.containsKey(d.id)) continue;
-        _subs[d.id] = FirebaseFirestore.instance
-            .collection('users')
-            .doc(d.id)
-            .snapshots()
-            .listen((u) {
+        _subs[d.id] = Presence.doc(d.id).snapshots().listen((u) {
           _data[d.id] = u.data();
           _eval(d.id);
         }, onError: (_) {});
@@ -389,4 +387,34 @@ class _PresenceDotFromDataState extends State<PresenceDotFromData> {
   @override
   Widget build(BuildContext context) =>
       PresenceDot(Presence.statusOf(widget.data), size: widget.size);
+}
+
+/// Status dot read ONCE (cached ~1 min) - for long lists like the leaderboard,
+/// where 100 live listeners would cost a lot of Firestore reads.
+class PresenceDotOnce extends StatelessWidget {
+  final String uid;
+  final double size;
+  const PresenceDotOnce(this.uid, {super.key, this.size = 14});
+
+  static final Map<String, (DateTime, Future<Map<String, dynamic>?>)> _cache = {};
+
+  static Future<Map<String, dynamic>?> _get(String uid) {
+    final hit = _cache[uid];
+    if (hit != null && DateTime.now().difference(hit.$1) < const Duration(minutes: 1)) {
+      return hit.$2;
+    }
+    final f = Presence.doc(uid)
+        .get()
+        .then<Map<String, dynamic>?>((s) => s.data())
+        .catchError((Object _) => null);
+    _cache[uid] = (DateTime.now(), f);
+    return f;
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<Map<String, dynamic>?>(
+        future: _get(uid),
+        builder: (context, snap) =>
+            PresenceDot(Presence.statusOf(snap.data), size: size),
+      );
 }

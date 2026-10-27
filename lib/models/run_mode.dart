@@ -157,7 +157,7 @@ class RunMode {
 
   String get multLabel => '${rewardMult.toStringAsFixed(1)}x';
 
-  /// "1.0x XP & Coins" / "+0.2x XP & Coins per km"
+  /// "1.0x XP & Coins" / "+0.8x XP & Coins per km"
   String get rewardLabel => isEndless
       ? '+$multLabel XP & Coins per km'
       : '$multLabel XP & Coins';
@@ -304,7 +304,8 @@ const RunMode kEndless = RunMode(
   mapName: 'Open Road',
   targetKm: null,
   clockMinutes: null,
-  rewardMult: 0.2,
+  // the everyday "just go for a run": almost full reward (ranks pay more)
+  rewardMult: 0.8,
   events: EventPlan.none,
   color: Color(0xFF5B3A9E),
   edge: Color(0xFF2A1A52),

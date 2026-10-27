@@ -11,6 +11,7 @@ import 'block_ui.dart';
 import 'challenge_overlay.dart';
 import 'live_tracker_animation.dart';
 import 'neon_alert_border.dart';
+import 'route_mini_map.dart';
 import 'session_avatar.dart';
 import 'tutorial_keys.dart';
 import 'emoji_icons.dart';
@@ -64,6 +65,10 @@ class TrackingView extends StatelessWidget {
   final GhostRun? ghost;
   final int elapsedSeconds;
 
+  /// Route so far ([{lat, lng}]) and the latest position, for the live map.
+  final List<Map<String, double>> routePoints;
+  final (double, double)? current;
+
   const TrackingView({
     super.key,
     required this.type,
@@ -81,6 +86,8 @@ class TrackingView extends StatelessWidget {
     this.gpsStatus = 3,
     this.ghost,
     this.elapsedSeconds = 0,
+    this.routePoints = const [],
+    this.current,
   });
 
   Widget _gpsChip() {
@@ -184,14 +191,21 @@ class TrackingView extends StatelessWidget {
             ],
             const SizedBox(height: 14),
 
-            // Animated game stage fills the (formerly empty) middle
+            // Middle: the running hero on top, the live map below (equal
+            // halves). Timer-only runs have no map, so the hero fills it.
             Expanded(
-              // Sprite-loop runner + parallax scenery. Speed 0 -> idle; the
-              // stance and frame rate follow the real GPS speed.
-              child: LiveTrackerAnimation(
-                currentUserSpeedKmh: moving ? speedKmh : 0,
-                boost: boost,
-                mapAsset: mode?.mapAsset,
+              child: _RunStage(
+                showMap: gpsStatus != 0,
+                routePoints: routePoints,
+                current: current,
+                moving: moving,
+                // Sprite-loop runner + parallax scenery. Speed 0 -> idle;
+                // the stance and frame rate follow the real GPS speed.
+                hero: LiveTrackerAnimation(
+                  currentUserSpeedKmh: moving ? speedKmh : 0,
+                  boost: boost,
+                  mapAsset: mode?.mapAsset,
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -216,7 +230,7 @@ class TrackingView extends StatelessWidget {
             ),
           ],
         );
-        const minH = 560.0;
+        final minH = gpsStatus != 0 ? 660.0 : 560.0;
         if (box.maxHeight >= minH) return col;
         return SingleChildScrollView(
           child: SizedBox(height: minH, child: col),
@@ -507,6 +521,66 @@ Future<void> showFinishDialog(
   );
 }
 
+/// Middle of the run screen: the running hero on top, the live map below.
+/// Equal halves by default; BIG MAP gives the map ~70% (tap the hero strip
+/// or HERO VIEW to go back). The choice is remembered for the next run.
+class _RunStage extends StatefulWidget {
+  final bool showMap;
+  final Widget hero;
+  final List<Map<String, double>> routePoints;
+  final (double, double)? current;
+  final bool moving;
+
+  const _RunStage({
+    required this.showMap,
+    required this.hero,
+    required this.routePoints,
+    required this.current,
+    required this.moving,
+  });
+
+  @override
+  State<_RunStage> createState() => _RunStageState();
+}
+
+class _RunStageState extends State<_RunStage> {
+  static bool _mapBig = false;
+
+  void _toggle() => setState(() => _mapBig = !_mapBig);
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.showMap) return widget.hero;
+    return LayoutBuilder(builder: (context, box) {
+      const gap = 10.0;
+      final h = (box.maxHeight - gap).clamp(0.0, double.infinity);
+      final heroH = _mapBig ? h * 0.3 : h / 2;
+      return Column(children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          height: heroH,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _mapBig ? _toggle : null,
+            child: widget.hero,
+          ),
+        ),
+        const SizedBox(height: gap),
+        Expanded(
+          child: LiveRouteMap(
+            points: widget.routePoints,
+            current: widget.current,
+            moving: widget.moving,
+            big: _mapBig,
+            onToggleSize: _toggle,
+          ),
+        ),
+      ]);
+    });
+  }
+}
+
 // ═════════════════════════════════════════════════════════════════════════
 // SCREEN 3 — SESSION COMPLETE
 // ═════════════════════════════════════════════════════════════════════════
@@ -750,6 +824,17 @@ class SessionSummarySheet extends StatelessWidget {
                     child: BlockText('\u2694\uFE0F DUEL WON! +\u{1FA99}$g',
                         size: 12, stroke: 3, align: TextAlign.center),
                   ),
+                ],
+                if (RouteMiniMap.hasRoute(session.routePoints)) ...[
+                  const SizedBox(height: 12),
+                  RouteMiniMap(
+                      points: session.routePoints,
+                      height: 170,
+                      showToggle: true),
+                  if (RouteSplitsTable.hasSplits(session.routePoints)) ...[
+                    const SizedBox(height: 8),
+                    RouteSplitsTable(points: session.routePoints),
+                  ],
                 ],
                 const SizedBox(height: 12),
 

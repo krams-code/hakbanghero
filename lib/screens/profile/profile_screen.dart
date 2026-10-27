@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hakbanghero/services/private_data.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -71,7 +72,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           sessions.add(ActivitySession.fromFirestore(d));
         } catch (_) {}
       }
-      final data = userSnap.data() ?? <String, dynamic>{};
+      final data = <String, dynamic>{
+        ...?userSnap.data(),
+        ...await PrivateData.load(uid),
+      };
       if (!mounted) return;
       setState(() {
         _user = data;

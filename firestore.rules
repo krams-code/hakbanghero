@@ -16,10 +16,12 @@ service cloud.firestore {
 
     // ── catalog (generated from hero_items.dart / hero_roster.dart) ──
     // Unknown ids cost 999999999, so they can never be "bought".
-    function itemCoins(id) { return {'cap_red': 0, 'beanie_blue': 0, 'ears_cat': 120, 'wizard_hat': 0, 'helm_knight': 0, 'halo': 400, 'crown_gold': 0, 'stache': 60, 'glasses_round': 80, 'shades': 150, 'mask_hero': 0, 'tee_stripes': 100, 'hoodie_orange': 0, 'jersey_bolt': 200, 'gi_ninja': 350, 'armor_silver': 0, 'armor_gold': 0, 'shorts_red': 0, 'pants_track': 120, 'pants_camo': 250, 'shorts_gold': 0, 'sneak_red': 0, 'runners_neon': 0, 'boots_gold': 450, 'wing_shoes': 600, 'rocket_boots': 0, 'cape_red': 0, 'backpack': 130, 'wings_bat': 0, 'wings_angel': 800, 'scarf_red': 0, 'medal_gold': 0, 'belt_champ': 0, 'wavy_mane': 0, 'neutral': 0, 'outfit_01_default_starter_set': 0, 'sweatband': 60, 'bucket_hat': 150, 'beret': 180, 'tophat': 350, 'viking': 500, 'pirate_hat': 800, 'crown_ice': 1200, 'crown_royal': 2800, 'freckles': 50, 'blush': 60, 'bandage': 70, 'glasses_nerd': 120, 'goggles_swim': 160, 'eyepatch': 280, 'beard': 350, 'visor_cyber': 500, 'shades_star': 700, 'mask_masq': 1000, 'shades_diamond': 2200, 'tee_lime': 80, 'polo_navy': 140, 'tank_sport': 180, 'flannel': 300, 'varsity': 450, 'track_retro': 500, 'robe_star': 900, 'armor_crystal': 1200, 'armor_dragon': 2500, 'shorts_denim': 70, 'shorts_gym': 90, 'jeans': 150, 'pants_khaki': 180, 'joggers': 280, 'shorts_board': 320, 'pants_plaid': 450, 'hakama': 750, 'leggings_galaxy': 1100, 'greaves': 1300, 'pants_royal': 2200, 'slides': 60, 'sneak_blue': 70, 'sneak_white': 100, 'hightops': 180, 'boots_hiking': 300, 'cleats': 400, 'sneak_flame': 550, 'boots_frost': 900, 'sneak_galaxy': 1200, 'boots_dragon': 2400, 'sling_bag': 90, 'backpack_school': 150, 'quiver': 200, 'cape_night': 300, 'surfboard': 380, 'wings_butterfly': 550, 'shield_round': 750, 'wings_fairy': 900, 'jetpack': 1100, 'cape_royal': 2000, 'tie_red': 60, 'bowtie': 80, 'bandana': 100, 'whistle': 120, 'scarf_cozy': 150, 'dogtags': 250, 'neckphones': 380, 'pearls': 450, 'chain_gold': 700, 'amulet': 1000, 'medallion': 1300, 'collar_diamond': 2500}.get(id, 999999999); }
+    function itemCoins(id) { return {'cap_red': 0, 'beanie_blue': 0, 'ears_cat': 120, 'wizard_hat': 0, 'helm_knight': 0, 'halo': 400, 'crown_gold': 0, 'sweatband': 60, 'bucket_hat': 150, 'beret': 180, 'tophat': 350, 'viking': 500, 'pirate_hat': 800, 'crown_ice': 1200, 'crown_royal': 2800, 'stache': 60, 'glasses_round': 80, 'shades': 150, 'mask_hero': 0, 'freckles': 50, 'blush': 60, 'bandage': 70, 'glasses_nerd': 120, 'goggles_swim': 160, 'eyepatch': 280, 'beard': 350, 'visor_cyber': 500, 'shades_star': 700, 'mask_masq': 1000, 'shades_diamond': 2200, 'tee_stripes': 100, 'hoodie_orange': 0, 'jersey_bolt': 200, 'gi_ninja': 350, 'armor_silver': 0, 'armor_gold': 0, 'tee_lime': 80, 'polo_navy': 140, 'tank_sport': 180, 'flannel': 300, 'varsity': 450, 'track_retro': 500, 'robe_star': 900, 'armor_crystal': 1200, 'armor_dragon': 2500, 'shorts_red': 0, 'pants_track': 120, 'pants_camo': 250, 'shorts_gold': 0, 'shorts_denim': 70, 'shorts_gym': 90, 'jeans': 150, 'pants_khaki': 180, 'joggers': 280, 'shorts_board': 320, 'pants_plaid': 450, 'hakama': 750, 'leggings_galaxy': 1100, 'greaves': 1300, 'pants_royal': 2200, 'sneak_red': 0, 'runners_neon': 0, 'boots_gold': 450, 'wing_shoes': 600, 'rocket_boots': 0, 'slides': 60, 'sneak_blue': 70, 'sneak_white': 100, 'hightops': 180, 'boots_hiking': 300, 'cleats': 400, 'sneak_flame': 550, 'boots_frost': 900, 'sneak_galaxy': 1200, 'boots_dragon': 2400, 'cape_red': 0, 'backpack': 130, 'wings_bat': 0, 'wings_angel': 800, 'sling_bag': 90, 'backpack_school': 150, 'quiver': 200, 'cape_night': 300, 'surfboard': 380, 'wings_butterfly': 550, 'shield_round': 750, 'wings_fairy': 900, 'jetpack': 1100, 'cape_royal': 2000, 'scarf_red': 0, 'medal_gold': 0, 'belt_champ': 0, 'tie_red': 60, 'bowtie': 80, 'bandana': 100, 'whistle': 120, 'scarf_cozy': 150, 'dogtags': 250, 'neckphones': 380, 'pearls': 450, 'chain_gold': 700, 'amulet': 1000, 'medallion': 1300, 'collar_diamond': 2500, 'wavy_mane': 0, 'neutral': 0, 'outfit_01_default_starter_set': 0}.get(id, 999999999); }
     function heroCoins(id) { return {'sprout': 0, 'frog': 0, 'penguin': 0, 'slime': 0, 'bear': 300, 'cat': 300, 'fox': 400, 'panda': 400, 'dino': 500, 'ghost': 0, 'shroom': 0, 'pirate': 0, 'ninja': 0, 'knight': 0, 'astronaut': 0, 'wizard': 1000, 'mech': 1200, 'dragon': 1500, 'alien': 0, 'flame': 0}.get(id, 999999999); }
     // earned heroes that need a cleared rank: hero id -> stage id
     function heroStage(id) { return {'ninja': 'stage_novice', 'knight': 'stage_vanguard', 'flame': 'stage_slayer'}.get(id, ''); }
+    // heroes with a level requirement: hero id -> total XP that level needs
+    function heroMinXp(id) { return {'ghost': 1500, 'pirate': 5000, 'wizard': 7500, 'mech': 14000}.get(id, 0); }
     // rank / trial targets: mode id -> [km, seconds]
     function stageTarget(mode) { return {'stage_novice': [2, 1200], 'stage_vanguard': [3.5, 1800], 'stage_slayer': [5, 2400], 'trial_2k_15': [2, 900], 'trial_2k_12': [2, 720], 'trial_2k_10': [2, 600], 'trial_5k_40': [5, 2400], 'trial_5k_32': [5, 1920], 'trial_5k_27': [5, 1620], 'trial_10k_80': [10, 4800], 'trial_10k_65': [10, 3900], 'trial_10k_55': [10, 3300], 'trial_42k_390': [42.195, 23400], 'trial_42k_330': [42.195, 19800], 'trial_42k_270': [42.195, 16200]}.get(mode, [999999999, 0]); }
 
@@ -58,13 +60,18 @@ service cloud.firestore {
       // stars, challenges, ghost win). 1 crystal used to be worth 10 coins.
       return delta('coins') >= 0
         && dailyCoinsOk()
-        && delta('coins') <= a.coinsEarned + 1500 + 300 * a.distanceKm
+        && delta('coins') <= a.coinsEarned + (a.distanceKm > 0 ? 1500 : 0) + 300 * a.distanceKm
                              + (changed('stage_records') ? 3000 : 0)
         && delta('xp') >= 0 && delta('xp') <= a.xpEarned
         && delta('total_km') >= 0 && delta('total_km') <= a.distanceKm + 0.001
         && delta('total_sessions') == 1
         && delta('loot_chests') >= 0 && delta('loot_chests') <= 3
-        && request.time > od('last_run_at', epoch()) + duration.value(30, 's');
+        // runs never overlap in time: each one starts after the last one
+        // ended (2 min slack), and none ends in the future
+        && nd('last_run_end', null) == a.endTime
+        && a.startTime >= od('last_run_end', epoch()) - duration.value(120, 's')
+        && a.endTime >= a.startTime
+        && a.endTime <= request.time + duration.value(600, 's');
     }
 
     function runOk(uid) {
@@ -94,12 +101,17 @@ service cloud.firestore {
 
     // ── duel prize: only the winner of a challenge that just finished ──
     function duelWinOk(uid) {
+      let path = /databases/$(database)/documents/challenges/$(nd('last_duel_id', ''));
+      let c = getAfter(path).data;
       return changed('last_duel_id')
         && nd('last_duel_id', '') is string
-        && getAfter(/databases/$(database)/documents/challenges/$(nd('last_duel_id', ''))).data.winner == uid
-        && getAfter(/databases/$(database)/documents/challenges/$(nd('last_duel_id', ''))).data.status == 'done'
-        && get(/databases/$(database)/documents/challenges/$(nd('last_duel_id', ''))).data.status != 'done'
-        && delta('coins') <= getAfter(/databases/$(database)/documents/challenges/$(nd('last_duel_id', ''))).data.reward;
+        && c.winner == uid
+        && c.status == 'done'
+        && get(path).data.status != 'done'
+        // a win by default pays only the share of the distance actually run
+        && delta('coins') <= c.reward * math.min(1.0, c.progress[uid] / c.distance_km)
+        && delta('coins') <= c.get('prize', 0)
+        && dailyCoinsOk();
     }
 
     // ── daily streak and weekly goal gifts ──
@@ -111,10 +123,12 @@ service cloud.firestore {
         && delta('coins') <= 4000;
     }
 
+    // calendar week number, weeks start Monday (Manila time)
+    function weekIdx() { return math.floor(float(coinDay() + 3) / 7.0); }
     function weeklyOk() {
       return changed('weekly_goal_claimed')
-        && nd('weekly_claim_at', null) == request.time
-        && request.time > od('weekly_claim_at', epoch()) + duration.value(6, 'd')
+        && nd('weekly_claim_week', -1) == weekIdx()
+        && od('weekly_claim_week', -1) != weekIdx()
         && delta('coins') <= 500;
     }
 
@@ -132,8 +146,9 @@ service cloud.firestore {
     function heroCoinsMin(nh, k) { return k < nh.size() ? heroCoins(nh[k]) : 0; }
     function heroUnlockedByRank(nh, k) {
       return k >= nh.size()
-        || heroStage(nh[k]) == ''
-        || nd('stage_records', {}).get(heroStage(nh[k]), {}).get('stars', 0) > 0;
+        || ((heroStage(nh[k]) == ''
+             || nd('stage_records', {}).get(heroStage(nh[k]), {}).get('stars', 0) > 0)
+            && nd('xp', 0) >= heroMinXp(nh[k]));
     }
 
     function ownershipOk() {
@@ -155,10 +170,18 @@ service cloud.firestore {
     // weight / height only change at the weekly check-in (6-day tolerance),
     // and the first time they are set (old value missing)
     function checkInOk() {
-      return (!changed('weight_kg') && !changed('height_cm') && !changed('body_tier'))
-        || od('weight_kg', null) == null
+      return !changed('body_tier')
+        || od('body_tier', null) == null
         || (request.time - od('last_checkin_at', request.time - duration.value(30, 'd')))
              >= duration.value(6, 'd');
+    }
+
+    // email / height / weight live in users/{uid}/private (owner only). On the
+    // public doc they may only be removed (one-time move of old accounts).
+    function noPrivateFields() {
+      return (!changed('email') || nd('email', null) == null)
+        && (!changed('height_cm') || nd('height_cm', null) == null)
+        && (!changed('weight_kg') || nd('weight_kg', null) == null);
     }
 
     // one-time cash-in of an old crystal balance: 1 crystal = 10 coins
@@ -176,7 +199,7 @@ service cloud.firestore {
 
     function economyOk(uid) {
       return
-        checkInOk() &&
+        checkInOk() && noPrivateFields() &&
         // A run is verified ONCE (its coins are checked inside runOk).
         // Rules may only make ~10 document lookups per write: checking the
         // run separately for coins, xp, km and runs went over that limit and
@@ -217,7 +240,9 @@ service cloud.firestore {
       return nd('coins', 0) <= 100 && nd('gems', 0) == 0
         && nd('xp', 0) == 0 && nd('total_km', 0) == 0
         && nd('total_sessions', 0) == 0
-        && nd('owned_items', []).size() <= 12;
+        && nd('owned_items', []).size() <= 12
+        && nd('email', null) == null && nd('weight_kg', null) == null
+        && nd('height_cm', null) == null;
     }
 
     // a run record must be humanly possible and its reward must fit the formula
@@ -230,7 +255,11 @@ service cloud.firestore {
         && a.coinsEarned is int && a.coinsEarned >= 0
         && a.coinsEarned <= a.distanceKm * 10 * 3.5 + 1
         && a.xpEarned is int && a.xpEarned >= 0
-        && a.xpEarned <= (a.distanceKm * 100 + a.durationSeconds / 60.0 * 5) * 1.3 * 3.5 + 2500;
+        // moving time can't be longer than the distance walked at 1.5 km/h
+        // (+2 min), so standing still earns no time XP
+        && a.xpEarned <= (a.distanceKm * 100
+             + math.min(a.durationSeconds, a.distanceKm / 1.5 * 3600 + 120) / 60.0 * 5)
+             * 1.3 * 3.5 + 300;
     }
 
     // ── users ──
@@ -239,6 +268,20 @@ service cloud.firestore {
       allow create: if isMe(uid) && freshAccount();
       allow update: if isMe(uid) && (heroSwitchOk() || economyOk(uid));
       allow delete: if isMe(uid);
+
+      // email / height / weight: only the player can read or write them
+      match /private/{doc} {
+        allow read, delete: if isMe(uid);
+        allow create, update: if isMe(uid)
+          && (request.resource.data.get('weight_kg', null) == null
+              || (request.resource.data.weight_kg is number
+                  && request.resource.data.weight_kg >= 20
+                  && request.resource.data.weight_kg <= 400))
+          && (request.resource.data.get('height_cm', null) == null
+              || (request.resource.data.height_cm is number
+                  && request.resource.data.height_cm >= 50
+                  && request.resource.data.height_cm <= 260));
+      }
 
       // weekly weight history (profile chart)
       match /weight_checkins/{id} {
@@ -270,7 +313,11 @@ service cloud.firestore {
       // the other side only while a pending request from them exists.
       match /friends/{fid} {
         allow read: if isMe(uid);
-        allow create: if isMe(uid)
+        // Both sides are written by the player who ACCEPTS a pending request,
+        // so nobody can add a friend without the other player's consent.
+        allow create: if (isMe(uid)
+              && exists(/databases/$(database)/documents/friend_requests/$(fid + '_' + uid))
+              && get(/databases/$(database)/documents/friend_requests/$(fid + '_' + uid)).data.status == 'pending')
           || (isMe(fid)
               && exists(/databases/$(database)/documents/friend_requests/$(uid + '_' + fid))
               && get(/databases/$(database)/documents/friend_requests/$(uid + '_' + fid)).data.status == 'pending');
@@ -284,7 +331,28 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if false;
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid; // account deletion
+    }
+
+    // ── usernames: one player per name (id = name in lower case) ──
+    match /usernames/{name} {
+      allow get: if true;            // "is this name taken?" before sign-up
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && name.size() > 0 && name.size() <= 40;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ── online / idle / offline dot: a tiny doc per player ──
+    match /presence/{uid} {
+      allow read: if signedIn();
+      allow create, update: if isMe(uid)
+        && request.resource.data.keys().hasOnly(['presence', 'presence_at'])
+        && request.resource.data.presence in ['online', 'idle', 'offline'];
+      allow delete: if isMe(uid);
     }
 
     // ── friend requests: doc id = "{fromUid}_{toUid}" ──
@@ -311,6 +379,41 @@ service cloud.firestore {
     // seen / flags, only name themselves as winner, and can only finish the
     // race (status "done") once their own progress has reached the distance
     // (or the opponent forfeited, which sets by_default).
+    function otherOf(d) {
+      return d.participants[0] == request.auth.uid ? d.participants[1] : d.participants[0];
+    }
+    function myProg(d) { return d.get('progress', {}).get(request.auth.uid, 0); }
+    // progress only changes during the race, and never faster than 25 km/h
+    function progressOk() {
+      return myProg(request.resource.data) == myProg(resource.data)
+        || ('started_at' in resource.data
+            && myProg(request.resource.data) is number
+            && myProg(request.resource.data) <= (request.time.toMillis()
+                 - resource.data.started_at.toMillis()) / 3600000.0 * 25 + 0.2);
+    }
+    // the other runner left, or has sent nothing for 90 s
+    function opponentGone() {
+      return (resource.data.status == 'forfeit'
+              && resource.data.get('forfeit_by', '') != request.auth.uid)
+        || (resource.data.status == 'active'
+            && request.time > resource.data.get('seen', {}).get(otherOf(resource.data),
+                 resource.data.get('started_at', request.time)) + duration.value(90, 's'));
+    }
+    function statusOk() {
+      let ns = request.resource.data.status;
+      return ns == resource.data.status
+        || (ns == 'forfeit' && resource.data.status == 'active'
+            && request.resource.data.get('forfeit_by', '') == request.auth.uid)
+        || (ns == 'done' && resource.data.status in ['active', 'forfeit']
+            && request.resource.data.get('winner', '') == request.auth.uid
+            && request.resource.data.get('prize', 0) <= resource.data.reward
+            && (request.resource.data.get('by_default', false) == true
+                  ? opponentGone()
+                  : myProg(request.resource.data) >= resource.data.distance_km))
+        || (ns in ['lobby', 'countdown', 'active', 'declined', 'cancelled', 'expired']
+            && resource.data.status in ['pending', 'lobby', 'countdown']);
+    }
+
     function ownKeyOnly(field) {
       return request.resource.data.get(field, {})
         .diff(resource.data.get(field, {}))
@@ -322,10 +425,16 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.from == request.auth.uid
         && request.resource.data.status == 'pending'
-        && request.resource.data.reward is int
-        && request.resource.data.reward <= 1000
         && request.resource.data.participants.size() == 2
-        && request.auth.uid in request.resource.data.participants;
+        && request.resource.data.participants[0] == request.auth.uid
+        // duels only between friends
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(request.resource.data.participants[1]))
+        // prize = the fixed table (1 km 200, 3 km 400, 5 km 600, 10 km 1000)
+        && request.resource.data.distance_km in [1, 3, 5, 10]
+        && request.resource.data.reward
+             == {'1': 200, '3': 400, '5': 600, '10': 1000}[string(request.resource.data.distance_km)]
+        && request.resource.data.get('progress', {}).values().hasOnly([0, 0.0])
+        && !('winner' in request.resource.data);
       allow update: if signedIn()
         && request.auth.uid in resource.data.participants
         && request.resource.data.participants == resource.data.participants
@@ -336,9 +445,14 @@ service cloud.firestore {
         && ownKeyOnly('seen')
         && ownKeyOnly('flags')
         && request.resource.data.get('winner', request.auth.uid) == request.auth.uid
-        && (request.resource.data.status != 'done'
-            || request.resource.data.get('by_default', false) == true
-            || request.resource.data.progress[request.auth.uid] >= request.resource.data.distance_km);
+        && (!('winner' in resource.data)
+            || request.resource.data.winner == resource.data.winner)
+        // a winner is only named when the race is finished
+        && (request.resource.data.status == 'done'
+            || !('winner' in request.resource.data)
+            || 'winner' in resource.data)
+        && progressOk()
+        && statusOk();
       allow delete: if false;
     }
 
@@ -357,13 +471,16 @@ service cloud.firestore {
         : chatId.split('_')[0];
     }
     function areFriends(chatId) {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(chatOther(chatId)));
+      return request.auth.uid in chatId.split('_')
+        && chatOther(chatId) != request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/friends/$(chatOther(chatId)));
     }
 
     match /chats/{chatId} {
-      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow read: if signedIn() && request.auth.uid in chatId.split('_')
+        && request.auth.uid in resource.data.members;
       allow create, update: if signedIn()
-        && request.auth.uid in request.resource.data.members
+        && request.resource.data.members.hasOnly(chatId.split('_'))
         && request.resource.data.members.size() == 2
         && areFriends(chatId);
       allow delete: if false;

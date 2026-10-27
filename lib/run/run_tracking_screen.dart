@@ -15,6 +15,7 @@ import 'package:hakbanghero/models/daily_quest_definitions.dart';
 import 'package:hakbanghero/models/ghost_run.dart';
 import '../models/run_mode.dart';
 import '../services/run_saver.dart';
+import '../services/run_checkpoint.dart';
 import '../services/sound.dart';
 import '../utils/rewards.dart';
 
@@ -105,6 +106,10 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
   /// Seconds of real movement, measured between counted GPS points.
   double _activeSec = 0;
 
+  /// SAVE of an interrupted run: keep the time recorded before the app
+  /// closed (don't count the hours it was closed).
+  bool _frozenClock = false;
+
   // ── Location check before the run (phase: locating) ──
   bool _useGps = true;
   bool _locBusy = false;
@@ -173,10 +178,14 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     // Send any run that was saved on the phone while offline.
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid != null) RunOutbox.flush(uid);
+
+    // A run that was cut off (app closed, tab reloaded, phone died)?
+    WidgetsBinding.instance.addPostFrameCallback((_) => _offerResume());
   }
 
   @override
   void dispose() {
+    ScreenAwake.off();
     Presence.I.holdActive(false);
     _positionSub?.cancel();
     _timer?.cancel();
@@ -631,7 +640,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       // the warm-up fix is the start point of the route
       final a = _anchor;
       if (useGps && a != null) {
-        _routePoints.add({'lat': a.latitude, 'lng': a.longitude});
+        _routePoints.add({'lat': a.latitude, 'lng': a.longitude, 't': 0});
       }
       _gpsStatus = !useGps ? 0 : (a == null ? 1 : (a.accuracy > 35 ? 2 : 3));
       _lastIntervalFast = null;
@@ -647,6 +656,15 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     });
 
     _startedAt = DateTime.now();
+    _frozenClock = false;
+    _startClock();
+  }
+
+  /// The run clock (wall clock based) + a checkpoint every 5 s + screen on.
+  void _startClock() {
+    _timer?.cancel();
+    ScreenAwake.on();
+    _checkpoint();
     _timer = Timer.periodic(
       const Duration(milliseconds: 500),
       (_) {
@@ -659,11 +677,166 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
           _activeSeconds = math.min(_activeSec.round(), _elapsedSeconds);
           if (!_isMoving) _currentSpeedKmh = 0; // stopped: speed reads 0
         });
+        if (e % 5 == 0) _checkpoint();
         _tickChallenge();
         _intervalCue();
         _checkStageLimits();
       },
     );
+  }
+
+  /// Save the run so far on the phone (see RunCheckpoint).
+  void _checkpoint() {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final st = _startedAt;
+    if (uid == null || st == null || _phase != _Phase.tracking || _ending) {
+      return;
+    }
+    RunCheckpoint.save(RunCheckpoint(
+      uid: uid,
+      modeId: _mode.id,
+      startedAtMs: st.millisecondsSinceEpoch,
+      elapsedSeconds: _elapsedSeconds,
+      distanceKm: _distanceKm,
+      activeSec: _activeSec,
+      maxSpeedKmh: _maxSpeedKmh,
+      useGps: _useGps,
+      userPick: _userPick.index,
+      route: List<Map<String, double>>.of(_routePoints),
+      speeds: _speedSamples.length > 1500
+          ? _speedSamples.sublist(_speedSamples.length - 1500)
+          : List<double>.of(_speedSamples),
+      savedAtMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+  }
+
+  /// On opening the run screen: offer to RESUME or SAVE a run that was cut
+  /// off, so it is never just lost.
+  Future<void> _offerResume() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final cp = await RunCheckpoint.load(uid);
+    if (cp == null || !mounted || _phase != _Phase.preRun) return;
+    final canResume =
+        DateTime.now().difference(cp.savedAt) <= RunCheckpoint.resumeWindow;
+    final mode = RunMode.byId(cp.modeId) ?? kEndless;
+    final mins = cp.elapsedSeconds ~/ 60;
+    final secs = (cp.elapsedSeconds % 60).toString().padLeft(2, '0');
+
+    Widget btn(String label, Color c, Color e, String value) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: SizedBox(
+            width: double.infinity,
+            child: PressBlock(
+              color: c,
+              edge: e,
+              depth: 5,
+              radius: 12,
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              onTap: () => Navigator.of(context, rootNavigator: true).pop(value),
+              child: Center(child: BlockText(label, size: 14, stroke: 3.5)),
+            ),
+          ),
+        );
+
+    final pick = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(22),
+        child: Block(
+          color: Rb.slate,
+          edge: Colors.black,
+          depth: 8,
+          radius: 22,
+          padding: const EdgeInsets.all(18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('\u{1F3C3}', style: TextStyle(fontSize: 44)),
+              const SizedBox(height: 6),
+              const BlockText('UNFINISHED RUN', size: 22, stroke: 5, color: Rb.gold),
+              const SizedBox(height: 8),
+              BlockText(
+                '${mode.name.toUpperCase()}  \u2022  ${cp.distanceKm.toStringAsFixed(2)} KM  \u2022  $mins:$secs\n'
+                'The app closed before this run was saved.',
+                size: 12,
+                stroke: 3,
+                align: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              if (canResume)
+                btn('\u25B6 RESUME RUN', Rb.green, Rb.greenEdge, 'resume'),
+              btn('\u{1F4BE} SAVE IT NOW', Rb.blue, Rb.blueEdge, 'save'),
+              btn('DISCARD', const Color(0xFF6B7078), const Color(0xFF1B1D20),
+                  'discard'),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (pick == 'discard' || pick == null) {
+      await RunCheckpoint.clear();
+      return;
+    }
+    await _resumeFrom(cp, mode, saveNow: pick == 'save');
+  }
+
+  /// Put a checkpointed run back on screen, then keep running or save it.
+  Future<void> _resumeFrom(RunCheckpoint cp, RunMode mode,
+      {required bool saveNow}) async {
+    _applyMode(mode);
+    if (cp.userPick >= 0 && cp.userPick < ActivityType.values.length) {
+      _userPick = ActivityType.values[cp.userPick];
+    }
+    _useGps = cp.useGps;
+    _challenge.setup(_mode.challengeConfig);
+    setState(() {
+      _phase = _Phase.tracking;
+      _distanceKm = cp.distanceKm;
+      _maxSpeedKmh = cp.maxSpeedKmh;
+      _activeSec = cp.activeSec;
+      _currentSpeedKmh = 0;
+      _elapsedSeconds = cp.elapsedSeconds;
+      _activeSeconds = math.min(_activeSec.round(), _elapsedSeconds);
+      _ending = false;
+      _outcome = null;
+      _outcomeGood = false;
+      _stageStars = 0;
+      _stageBonusCoins = 0;
+      _stageFirstClear = false;
+      _unlockedRank = null;
+      _speedSamples
+        ..clear()
+        ..addAll(cp.speeds);
+      _routePoints
+        ..clear()
+        ..addAll(cp.route);
+      _lastPosition = null;
+      _lastMoveAt = null;
+      _anchor = null; // the first new fix becomes the anchor (gap not counted)
+      _gpsStatus = cp.useGps ? 1 : 0;
+      _lastIntervalFast = null;
+      _fastKm.fillRange(0, _fastKm.length, 0.0);
+      _intervalStats = null;
+      _intervalNewBest = false;
+      _newlyCompletedQuests = [];
+      _summaryChallenges = [];
+      _raceGhost = null;
+      _summaryGhost = null;
+    });
+    _startedAt = cp.startedAt;
+    if (saveNow) {
+      _frozenClock = true;
+      await _endSession();
+      return;
+    }
+    _frozenClock = false;
+    Sound.I.music(Bgm.run);
+    if (cp.useGps) _startGpsStream();
+    _startClock();
   }
 
   /// Best tracking settings per platform. Phone apps keep tracking with the
@@ -776,7 +949,14 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         final ph = RunMode.intervalAt(_elapsedSeconds);
         if (ph != null && ph.fast) _fastKm[ph.round - 1] += km;
       }
-      _routePoints.add({'lat': pos.latitude, 'lng': pos.longitude});
+      final t0 = _startedAt;
+      _routePoints.add({
+        'lat': pos.latitude,
+        'lng': pos.longitude,
+        // seconds since the start, for the pace of each kilometre
+        if (t0 != null)
+          't': (DateTime.now().difference(t0).inMilliseconds / 100).round() / 10,
+      });
     });
     _anchor = pos;
     _lastPosition = pos;
@@ -861,8 +1041,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     _positionSub?.cancel();
     _positionSub = null;
     _timer?.cancel();
+    ScreenAwake.off();
     final st = _startedAt;
-    if (st != null) {
+    if (st != null && !_frozenClock) {
       _elapsedSeconds = DateTime.now().difference(st).inSeconds;
     }
     _activeSeconds = math.min(_activeSec.round(), _elapsedSeconds);
@@ -914,7 +1095,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       }
     }
 
-    // Mode multiplier: Novice 1.0x, Vanguard 1.5x, Slayer 2.5x, Endless 0.2x.
+    // Mode multiplier: Novice 1.0x, Vanguard 1.5x, Slayer 2.5x, Free Run 0.8x.
     final mult = _mode.rewardMult;
 
     // Reward = verified distance + MOVING time + pace bonus (utils/rewards.dart)
@@ -930,17 +1111,17 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
     // Challenge bonus coins scale with the mode; the ghost prize stays fixed.
     final modeBonus = (bonusCoins * mult).round();
 
-    final sessionStart =
-        DateTime.now().subtract(
-      Duration(seconds: _elapsedSeconds),
-    );
+    // the real start (also the run id), even for a run saved after a restart
+    final sessionStart = _startedAt ??
+        DateTime.now().subtract(Duration(seconds: _elapsedSeconds));
+    final sessionEnd = sessionStart.add(Duration(seconds: _elapsedSeconds));
 
     final session = ActivitySession(
       id: '',
       type: finalType,
       userPick: finalType,
       startTime: sessionStart,
-      endTime: DateTime.now(),
+      endTime: sessionEnd,
       distanceKm:
           double.parse(
         _distanceKm.toStringAsFixed(3),
@@ -1018,6 +1199,10 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       try {
         final r = await RunSaver.save(payload).timeout(RunSaver.timeout);
         RunCloud.done(user.uid, payload.id);
+        if (r.late && mounted) {
+          _showSnack('This run overlaps one already saved, so it was kept '
+              'in your history without rewards.');
+        }
         _newlyCompletedQuests = r.completedQuests;
         _stageStars = _mode.isTrial ? 0 : r.stars;
         _stageBonusCoins = r.bonusCoins;
@@ -1039,6 +1224,9 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         }
       }
     }
+    // the run is safe (saved, queued on the phone and in the cloud)
+    await RunCheckpoint.clear();
+    _frozenClock = false;
 
     if (mounted) {
       setState(() {
@@ -1157,6 +1345,7 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
         _lastPosition = null;
         _anchor = null;
         _startedAt = null;
+        _frozenClock = false;
         _activeSec = 0;
         _speedSamples.clear();
         _routePoints.clear();
@@ -1271,6 +1460,8 @@ class _RunTrackingScreenState extends State<RunTrackingScreen>
       gpsStatus: _gpsStatus,
       ghost: _raceGhost,
       elapsedSeconds: _elapsedSeconds,
+      routePoints: _routePoints,
+      current: _anchor == null ? null : (_anchor!.latitude, _anchor!.longitude),
     );
   }
 }

@@ -15,12 +15,9 @@ dependencies:
   firebase_core: ^3.15.2
   firebase_auth: ^5.4.0
   cloud_firestore: ^5.6.0
-  firebase_storage: ^12.4.0
 
   # UI & Animation
   intl: ^0.20.2
-  flutter_screenutil: ^5.9.3
-  cached_network_image: ^3.4.1
   lottie: ^3.3.1
   fl_chart: ^0.70.2
   flutter_svg: ^2.0.10        # Layered SVG character avatar rendering
@@ -29,8 +26,12 @@ dependencies:
   shared_preferences: ^2.3.5
 
   # ── GPS / Location (NEW) ──────────────────────────────────────────────────
+  wakelock_plus: ^1.2.8         # keep the screen on during a run
   geolocator: ^13.0.4          # GPS speed + position stream
-  permission_handler: ^11.3.1  # Runtime permission requests
+
+  # ── Real maps (OpenStreetMap streets, MapTiler satellite) ────────────────
+  flutter_map: ^8.2.2
+  latlong2: ^0.9.1
 
   # ── Sudden mid-run challenge alarm ────────────────────────────────────────
   audioplayers: ^6.1.0

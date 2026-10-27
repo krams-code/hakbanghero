@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hakbanghero/services/usernames.dart';
+import 'package:hakbanghero/services/private_data.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -67,9 +69,11 @@ class GoogleAuth {
     final ref = FirebaseFirestore.instance.collection('users').doc(user.uid);
     final doc = await ref.get();
     if (doc.exists) return;
+    // one player per name: "Mark" may become "Mark4821"
+    final name = await Usernames.claimFree(user.uid, username);
     await ref.set({
-      'username': username,
-      'email': user.email,
+      'username': name,
+      'username_key': Usernames.key(name),
       'gender': gender,
       'level': 1,
       'xp': 0,
@@ -80,13 +84,15 @@ class GoogleAuth {
       'total_sessions': 0,
       'created_at': FieldValue.serverTimestamp(),
       'character_created': false,
-      'height_cm': null,
-      'weight_kg': null,
       'skin_tone': '#E0AC69',
       ...StarterPack.toFirestore(),
       'owned_items': StarterPack.ownedItems,
       'hair_color': '#1A1A1A',
       'body_tier': 'average',
     });
+    // private: only this player can read it
+    await PrivateData.ref(user.uid)
+        .set({'email': user.email}, SetOptions(merge: true))
+        .catchError((Object _) {});
   }
 }

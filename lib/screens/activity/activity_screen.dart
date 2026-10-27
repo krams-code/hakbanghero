@@ -796,6 +796,11 @@ class _ActivityScreenState extends State<ActivityScreen> {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
+      // dragging must move the map, not close the sheet
+      enableDrag: false,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.88),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -816,10 +821,24 @@ class _ActivityScreenState extends State<ActivityScreen> {
                   stroke: 3,
                   color: const Color(0xFFB8BDC4)),
               const SizedBox(height: 10),
-              RouteMiniMap(points: s.routePoints, height: 280),
+              RouteMiniMap(
+                  points: s.routePoints,
+                  height: 300,
+                  interactive: true,
+                  showToggle: true),
               const SizedBox(height: 6),
-              const BlockText('\u{1F7E2} START   \u{1F534} FINISH',
-                  size: 10, stroke: 2.5),
+              const BlockText(
+                  '\u{1F7E2} START   \u{1F534} FINISH   \u26AA KM MARK',
+                  size: 10,
+                  stroke: 2.5),
+              if (RouteSplitsTable.hasSplits(s.routePoints)) ...[
+                const SizedBox(height: 8),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: RouteSplitsTable(points: s.routePoints),
+                  ),
+                ),
+              ],
             ]),
           ),
         ),

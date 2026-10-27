@@ -40,8 +40,13 @@ abstract final class RunRewards {
     required double mult,
     int bonusXp = 0,
   }) {
-    final avg = movingKmh(km, activeSeconds);
-    final base = km * xpPerKm + activeSeconds / 60 * xpPerActiveMinute;
+    // moving time can't be more than the distance covered at a slow walk
+    // (1.5 km/h) + 2 min: standing still never earns time XP (the security
+    // rules use the same limit)
+    final maxActive = (km / 1.5 * 3600).round() + 120;
+    final active = activeSeconds < maxActive ? activeSeconds : maxActive;
+    final avg = movingKmh(km, active);
+    final base = km * xpPerKm + active / 60 * xpPerActiveMinute;
     return (base * intensity(avg) * mult).round() + (bonusXp * mult).round();
   }
 

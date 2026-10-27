@@ -5,6 +5,7 @@
 // Firestore fields or rules and a badge can never be "granted" by tampering.
 
 import 'package:hakbanghero/models/activity_model.dart';
+import 'package:hakbanghero/utils/player_stats.dart' show LevelProgress;
 
 /// The numbers the badges are measured against.
 class BadgeStats {
@@ -32,7 +33,7 @@ class BadgeStats {
   factory BadgeStats.fromPublic(Map<String, dynamic> user) => BadgeStats(
         sessions: (user['total_sessions'] as num?)?.toInt() ?? 0,
         totalKm: (user['total_km'] as num?)?.toDouble() ?? 0,
-        level: (user['level'] as num?)?.toInt() ?? 1,
+        level: LevelProgress.fromXp((user['xp'] as num?)?.toInt() ?? 0).level,
       );
 
   factory BadgeStats.from({
@@ -45,7 +46,7 @@ class BadgeStats {
     return BadgeStats(
       sessions: (user['total_sessions'] as num?)?.toInt() ?? 0,
       totalKm: (user['total_km'] as num?)?.toDouble() ?? 0,
-      level: (user['level'] as num?)?.toInt() ?? 1,
+      level: LevelProgress.fromXp((user['xp'] as num?)?.toInt() ?? 0).level,
       longestRunKm: longestRunKm,
       bestPaceSecsPerKm: bestPaceSecsPerKm,
       longestStreakDays: longestStreakDays,

@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../services/sound.dart';
 import '../services/presence.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import 'block_ui.dart';
+import 'delete_account_dialog.dart';
 
 /// ⚙ SETTINGS pop-up: music, sound effects, vibration.
 /// Open it with [showSettingsSheet]. Everything saves on the phone at once.
@@ -112,6 +115,26 @@ class _SettingsSheet extends StatelessWidget {
                     child: Center(child: BlockText('DONE', size: 17, stroke: 4)),
                   ),
                 ),
+                if (FirebaseAuth.instance.currentUser != null) ...[
+                  const SizedBox(height: 14),
+                  TextButton(
+                    onPressed: () async {
+                      final nav = Navigator.of(context);
+                      await nav.maybePop(); // close Settings first
+                      if (nav.context.mounted) {
+                        await showDeleteAccountDialog(nav.context);
+                      }
+                    },
+                    child: const Text(
+                      'Delete my account',
+                      style: TextStyle(
+                        color: Color(0xFF7A1C20),
+                        fontWeight: FontWeight.w800,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

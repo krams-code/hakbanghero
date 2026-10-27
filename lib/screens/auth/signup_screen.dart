@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hakbanghero/services/usernames.dart';
+import 'package:hakbanghero/services/private_data.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -97,7 +99,7 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!doc.exists) {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'username': username,
-        'email': user.email,
+        'username_key': Usernames.key(username),
         'gender': gender,
         'level': 1,
         'xp': 0,
@@ -108,8 +110,6 @@ class _SignupScreenState extends State<SignupScreen> {
         'total_sessions': 0,
         'created_at': FieldValue.serverTimestamp(),
         'character_created': false,
-        'height_cm': null,
-        'weight_kg': null,
         'skin_tone': '#E0AC69',
         // Starter pack: every new hero starts with ONLY these free items
         // (Wavy Mane, default face, white tank-top set).
@@ -118,6 +118,10 @@ class _SignupScreenState extends State<SignupScreen> {
         'hair_color': '#1A1A1A',
         'body_tier': 'average',
       });
+      // private: only this player can read it
+      await PrivateData.ref(user.uid)
+          .set({'email': user.email}, SetOptions(merge: true))
+          .catchError((Object _) {});
     }
   }
 
@@ -132,14 +136,23 @@ class _SignupScreenState extends State<SignupScreen> {
 
     final username = _usernameCtrl.text.trim();
     setState(() => _loading = true);
+    if (await Usernames.isTaken(username)) {
+      if (mounted) setState(() => _loading = false);
+      _snack('That username is taken. Try another one.');
+      return;
+    }
     try {
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _emailCtrl.text.trim(),
         password: _passCtrl.text, // never trimmed
       );
       if (cred.user != null) {
-        await cred.user!.updateDisplayName(username);
-        await _createUserDoc(cred.user!, username, gender: selectedGender);
+        // reserve the name (a number is added in the rare same-second clash)
+        final name = await Usernames.claimFree(cred.user!.uid, username);
+        await cred.user!.updateDisplayName(name);
+        // proves the email is real (reminder banner on Home until opened)
+        cred.user!.sendEmailVerification().catchError((Object _) {});
+        await _createUserDoc(cred.user!, name, gender: selectedGender);
         _goHome();
       }
     } on FirebaseAuthException catch (e) {

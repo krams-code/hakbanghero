@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/run_saver.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -36,14 +37,19 @@ class _WeeklyGoalCardState extends State<WeeklyGoalCard> {
     if (_uid == null) return;
     try {
       final user = (await _ref.get()).data() ?? {};
-      final mode = forceMode ?? WeeklyGoal.modeFrom(user['goal_mode'] as String?);
-      final goal = WeeklyGoal.compute(await WeeklyGoal.loadSessions(_uid!), mode);
       final key = Weekly.key(DateTime.now());
-
       // Research log: remember what target this player was given this week.
       final log = user['weekly_goal_log'];
       final seen = log is Map && log[key] != null;
-      if (!seen || forceMode != null) {
+      // The goal type is locked for the week once it was shown (so nobody
+      // swaps to the easier one mid-week). A switch applies next Monday.
+      final weekMode =
+          seen && log[key] is Map ? (log[key] as Map)['mode'] as String? : null;
+      _nextMode = WeeklyGoal.modeFrom(user['goal_mode'] as String?);
+      final mode = forceMode ?? WeeklyGoal.modeFrom(weekMode ?? user['goal_mode'] as String?);
+      final goal = WeeklyGoal.compute(await WeeklyGoal.loadSessions(_uid!), mode);
+
+      if (!seen) {
         _ref.set({
           'weekly_goal_log': {
             key: {
@@ -62,12 +68,24 @@ class _WeeklyGoalCardState extends State<WeeklyGoalCard> {
     } catch (_) {}
   }
 
+  /// The goal type chosen for NEXT week (this week's is locked).
+  GoalMode? _nextMode;
+
   Future<void> _toggleMode() async {
     final g = _goal;
     if (g == null || _uid == null) return;
-    final next = g.mode == GoalMode.adaptive ? GoalMode.fixed : GoalMode.adaptive;
+    final current = _nextMode ?? g.mode;
+    final next = current == GoalMode.adaptive ? GoalMode.fixed : GoalMode.adaptive;
     await _ref.set({'goal_mode': next.name}, SetOptions(merge: true));
-    await _load(forceMode: next);
+    if (!mounted) return;
+    setState(() => _nextMode = next);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+          content: Text(next == g.mode
+              ? 'Kept: ${next.name.toUpperCase()} goal.'
+              : 'From next Monday your goal is ${next.name.toUpperCase()}. '
+                  "This week's goal stays the same.")));
   }
 
   Future<void> _claim() async {
@@ -81,7 +99,9 @@ class _WeeklyGoalCardState extends State<WeeklyGoalCard> {
         if ((snap.data()?['weekly_goal_claimed'] as String?) == key) throw 'done';
         txn.update(_ref, {
           'weekly_goal_claimed': key,
-          'weekly_claim_at': FieldValue.serverTimestamp(), // rules: 1 per week
+          'weekly_claim_at': FieldValue.serverTimestamp(),
+          // rules: one claim per calendar week (Monday start)
+          'weekly_claim_week': RunSaver.weekIdx(),
           'coins': FieldValue.increment(WeeklyGoal.rewardCoins),
           'weekly_goal_log.$key.achieved_km': double.parse(g.weekKm.toStringAsFixed(2)),
         });
@@ -134,7 +154,11 @@ class _WeeklyGoalCardState extends State<WeeklyGoalCard> {
                 radius: 8,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 onTap: _toggleMode,
-                child: BlockText(adaptive ? 'ADAPTIVE' : 'FIXED', size: 9, stroke: 2.5),
+                child: BlockText(
+                    '${adaptive ? 'ADAPTIVE' : 'FIXED'}'
+                    '${_nextMode != null && _nextMode != g.mode ? ' \u2192 ${_nextMode!.name.toUpperCase()}' : ''}',
+                    size: 9,
+                    stroke: 2.5),
               ),
             ],
           ),

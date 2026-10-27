@@ -8,6 +8,7 @@ import 'hero_sprite.dart';
 import '../models/badge_definitions.dart';
 import '../models/hero_roster.dart';
 import 'badges_panel.dart';
+import '../utils/player_stats.dart' show LevelProgress;
 
 /// Tap a player on the leaderboard -> a small "profile card" with their
 /// summarized totals (read-only, built from the public user doc).
@@ -138,8 +139,8 @@ class _PlayerCardState extends State<_PlayerCard> {
   @override
   Widget build(BuildContext context) {
     final name = (d['username'] as String?) ?? 'Hero';
-    final level = _n(d['level']).toInt().clamp(1, 9999);
     final xp = _n(d['xp']).toInt();
+    final level = LevelProgress.fromXp(xp).level;
     final km = _n(d['total_km']).toDouble();
     final runs = _n(d['total_sessions']).toInt();
     final intervals = _n(d['interval_runs']).toInt();

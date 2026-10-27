@@ -10,6 +10,8 @@ import '../../services/friends_service.dart';
 import '../friends/friends_screen.dart';
 import '../../widgets/lottie_fx.dart';
 import '../../widgets/player_card_sheet.dart';
+import '../../utils/player_stats.dart' show LevelProgress;
+import '../../utils/weekly.dart';
 import '../../services/presence.dart';
 
 class LeaderboardScreen extends StatefulWidget {
@@ -20,15 +22,33 @@ class LeaderboardScreen extends StatefulWidget {
 }
 
 class _LeaderboardScreenState extends State<LeaderboardScreen> {
-  // Created ONCE so rebuilds don't reconnect the listener (no spinner flash).
-  late final Stream<QuerySnapshot> _board = FirebaseFirestore.instance
-      .collection('users')
-      .orderBy('xp', descending: true)
-      .limit(100)
-      .snapshots();
+  // One-time reads (pull down to refresh), cached per tab. A live listener on
+  // 100 full profiles re-downloaded them on every change and cost a lot of
+  // Firestore reads.
+  final Map<int, Future<QuerySnapshot<Map<String, dynamic>>>> _boards = {};
   Stream<QuerySnapshot<Map<String, dynamic>>>? _requests;
 
-  int _timeIdx = 2; // 0 week, 1 month, 2 all time (only all-time is live)
+  int _timeIdx = 2; // 0 this week (km), 1 this month (km), 2 all time (XP)
+
+  static String monthKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}';
+
+  Future<QuerySnapshot<Map<String, dynamic>>> _board(int idx,
+      {bool refresh = false}) {
+    if (!refresh && _boards[idx] != null) return _boards[idx]!;
+    final users = FirebaseFirestore.instance.collection('users');
+    final now = DateTime.now();
+    final Query<Map<String, dynamic>> q = switch (idx) {
+      0 => users
+          .where('week_key', isEqualTo: Weekly.key(now))
+          .orderBy('week_km', descending: true),
+      1 => users
+          .where('month_key', isEqualTo: monthKey(now))
+          .orderBy('month_km', descending: true),
+      _ => users.orderBy('xp', descending: true),
+    };
+    return _boards[idx] = q.limit(100).get();
+  }
   String _genderFilter = 'all';
 
   @override
@@ -52,18 +72,25 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               ),
             ),
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _board,
+              child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                key: ValueKey(_timeIdx),
+                future: _board(_timeIdx),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const LoadingRunner();
                   }
+                  if (snapshot.hasError) {
+                    return _refreshable(_emptyNote(
+                        'Could not load the board. Pull down to try again.'));
+                  }
                   if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return _emptyNote('No heroes on the board yet.');
+                    return _refreshable(_emptyNote(_timeIdx == 2
+                        ? 'No heroes on the board yet.'
+                        : 'Nobody has run ${_timeIdx == 0 ? 'this week' : 'this month'} yet. Be the first!'));
                   }
 
                   var entries = snapshot.data!.docs
-                      .map((d) => _LeaderboardEntry.fromDoc(d))
+                      .map((d) => _LeaderboardEntry.fromDoc(d, _timeIdx))
                       .toList();
 
                   // heroes who never picked BOY / GIRL (old or Google accounts)
@@ -79,10 +106,14 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                           "haven't picked BOY or GIRL yet."
                       : null;
                   if (entries.isEmpty) {
-                    return _emptyNote(note ?? 'No heroes match this filter yet.');
+                    return _refreshable(
+                        _emptyNote(note ?? 'No heroes match this filter yet.'));
                   }
 
-                  return ListView.builder(
+                  return RefreshIndicator(
+                    onRefresh: _refresh,
+                    child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     itemCount: entries.length + (note == null ? 0 : 1),
                     itemBuilder: (context, i) {
@@ -99,6 +130,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                       }
                       return _buildRow(i + 1, entries[i], entries[i].uid == myUid);
                     },
+                  ),
                   );
                 },
               ),
@@ -108,6 +140,25 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
       ),
     );
   }
+
+  Future<void> _refresh() async {
+    final f = _board(_timeIdx, refresh: true);
+    setState(() {});
+    try {
+      await f;
+    } catch (_) {}
+  }
+
+  /// Lets an empty / error message be pulled down to reload.
+  Widget _refreshable(Widget child) => RefreshIndicator(
+        onRefresh: _refresh,
+        child: LayoutBuilder(
+          builder: (context, box) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: SizedBox(height: box.maxHeight, child: child),
+          ),
+        ),
+      );
 
   Widget _emptyNote(String text) => Center(
         child: Block(
@@ -301,7 +352,7 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
               Positioned(
                 right: -4,
                 bottom: -4,
-                child: PresenceDotFromData(entry.data, size: 15),
+                child: PresenceDotOnce(entry.uid, size: 15),
               ),
             ],
           ),
@@ -343,10 +394,15 @@ class _LeaderboardScreenState extends State<LeaderboardScreen> {
                 FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerRight,
-                  child: BlockText(_formatNum(entry.score),
-                      size: 26, stroke: 5, color: Rb.gold),
+                  child: BlockText(
+                      entry.byKm
+                          ? entry.km.toStringAsFixed(1)
+                          : _formatNum(entry.score),
+                      size: 26,
+                      stroke: 5,
+                      color: Rb.gold),
                 ),
-                const BlockText('XP', size: 10, stroke: 3),
+                BlockText(entry.byKm ? 'KM' : 'XP', size: 10, stroke: 3),
               ],
             ),
           ),
@@ -458,7 +514,13 @@ class _LeaderboardEntry {
   /// Full user doc, passed to HeroSprite.fromData for the appearance fields.
   final Map<String, dynamic> data;
 
+  /// Week / month boards rank by km run in that period.
+  final bool byKm;
+  final double km;
+
   _LeaderboardEntry({
+    this.byKm = false,
+    this.km = 0,
     required this.uid,
     required this.username,
     required this.level,
@@ -471,12 +533,14 @@ class _LeaderboardEntry {
   /// The number shown big on the right (the board is ranked by XP).
   int get score => xp;
 
-  factory _LeaderboardEntry.fromDoc(QueryDocumentSnapshot doc) {
+  factory _LeaderboardEntry.fromDoc(QueryDocumentSnapshot doc, [int tab = 2]) {
     final d = doc.data() as Map<String, dynamic>;
     return _LeaderboardEntry(
+      byKm: tab != 2,
+      km: ((tab == 0 ? d['week_km'] : d['month_km']) as num?)?.toDouble() ?? 0,
       uid: doc.id,
       username: d['username'] ?? 'Hero',
-      level: (d['level'] as num?)?.toInt() ?? 1,
+      level: LevelProgress.fromXp((d['xp'] as num?)?.toInt() ?? 0).level,
       xp: (d['xp'] as num?)?.toInt() ?? 0,
       totalKm: (d['total_km'] as num?)?.toDouble() ?? 0.0,
       gender: d['gender'] as String?,
